@@ -1,7 +1,7 @@
 package imsld.model
 
 final case class Collection(
-    id: Long,
+    id: Int,
     slug: Option[String],
     label: Option[String],
     items: List[Item],
@@ -10,7 +10,7 @@ final case class Collection(
 ) extends WithId
 
 final case class CollectionPartial(
-    id: Long,
+    id: Int,
     slug: Option[String],
     label: Option[String]
 ) extends WithId

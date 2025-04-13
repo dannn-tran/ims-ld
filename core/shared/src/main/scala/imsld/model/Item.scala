@@ -3,7 +3,7 @@ package imsld.model
 import java.time.LocalDate
 
 final case class Item(
-    id: Long,
+    id: Int,
     slug: Option[String],
     label: Option[String],
     acquireDate: Option[LocalDate],
@@ -14,7 +14,7 @@ final case class Item(
 ) extends WithId
 
 final case class ItemPartial(
-    id: Long,
+    id: Int,
     slug: Option[String],
     label: Option[String],
     acquireDate: Option[LocalDate],

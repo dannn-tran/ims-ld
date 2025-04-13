@@ -1,7 +1,7 @@
 package imsld.model
 
 final case class Entity(
-    id: Long,
+    id: Int,
     slug: Option[String],
     label: Option[String],
     linkedItems: List[(ItemPartial, ItemEntityRelType)],
@@ -9,7 +9,7 @@ final case class Entity(
 ) extends WithId
 
 final case class EntityPartial(
-    id: Long,
+    id: Int,
     slug: Option[String],
     label: Option[String]
 ) extends WithId

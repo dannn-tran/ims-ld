@@ -19,6 +19,10 @@ import imsld.services.ItemService.{
   getOneByIdQuery,
   insertManyQuery
 }
+import imsld.model.PagedResponse
+import imsld.model.PagingRequest
+import imsld.services.ItemService.countQuery
+import imsld.model.PagingResponse
 
 final case class ItemService[F[_]: Sync](
     pgSessionPool: Resource[F, Session[F]]
@@ -26,17 +30,28 @@ final case class ItemService[F[_]: Sync](
   def insertMany(items: List[ItemDto]): F[List[InsertedRowWithId]] =
     pgSessionPool.use { session =>
       for
-        ps <- session.prepare(insertManyQuery(items.length))
-        ids <- ps.stream(items, 64).compile.toList
+        query <- session.prepare(insertManyQuery(items.length))
+        ids <- query.stream(items, 64).compile.toList
       yield ids
     }
 
-  def getAll(): F[List[ItemPartial]] =
+  def getAll(pagingRequest: PagingRequest): F[PagedResponse[ItemPartial]] =
     pgSessionPool.use { session =>
-      session.execute(getAllQuery)
+      for
+        dataQuery <- session.prepare(getAllQuery)
+        data <- dataQuery.stream(pagingRequest, 64).compile.toList
+        count <- session.unique(countQuery)
+      yield PagedResponse(
+        data = data,
+        paging = PagingResponse(
+          pageNumber = pagingRequest.pageNumber,
+          pageSize = pagingRequest.pageSize,
+          totalPages = count / pagingRequest.pageSize + 1
+        )
+      )
     }
 
-  def getOneById(id: Long): F[Option[Item]] =
+  def getOneById(id: Int): F[Option[Item]] =
     pgSessionPool.use { session =>
       for
         ps <- session.prepare(getOneByIdQuery)
@@ -70,30 +85,39 @@ object ItemService:
       VALUES ${itemDtoEnc.values.list(n)}
       RETURNING id
     """
-      .query(int8)
+      .query(int4)
       .to[InsertedRowWithId]
 
-  val getAllQuery: Query[skunk.Void, ItemPartial] =
+  val countQuery: Query[skunk.Void, Int] =
+    sql"""
+      SELECT COUNT(*) FROM ITEMS
+    """.query(int4)
+
+  val getAllQuery: Query[PagingRequest, ItemPartial] =
     sql"""
       SELECT id, slug, label, acquire_date, acquire_price, acquire_source
       FROM items
+      ORDER BY id
+      OFFSET $int4
+      LIMIT $int4
     """
       .query(
-        int8 *: varchar(
+        int4 *: varchar(
           64
         ).opt *: text.opt *: date.opt *: monetary_amount.opt *:
           text.opt
       )
       .to[ItemPartial]
+      .contramap(p => (p.pageSize * p.pageNumber, p.pageSize))
 
-  val getOneByIdQuery: Query[Long, Item] =
+  val getOneByIdQuery: Query[Int, Item] =
     sql"""
       SELECT id, slug, label, acquire_date, acquire_price, acquire_source
       FROM items
-      WHERE id = $int8
+      WHERE id = $int4
     """
       .query(
-        int8 *: varchar(
+        int4 *: varchar(
           64
         ).opt *: text.opt *: date.opt *: monetary_amount.opt *: text.opt
       )

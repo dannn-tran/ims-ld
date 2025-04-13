@@ -1,6 +1,6 @@
 package imsld.model
 
 trait WithId:
-  def id: Long
+  def id: Int
 
-final case class InsertedRowWithId(id: Long) extends WithId
+final case class InsertedRowWithId(id: Int) extends WithId
