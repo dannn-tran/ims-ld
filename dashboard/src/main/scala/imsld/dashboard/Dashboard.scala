@@ -23,24 +23,7 @@ object Main:
 
   def appElement(): Element =
     div(
-      FetchStream.get(s"$BACKEND_ENDPOINT/items").recoverToEither --> itemsVar
-        .updater[Either[Throwable, String]] { (_, resp) =>
-          resp match
-            case Left(err)   => Left(err).some
-            case Right(resp) => decode[PagedResponse[ItemPartial]](resp).some
-        },
-      child <-- itemsVar.signal.splitMatchOne
-        .handleCase { case Some(Left(err)) => err } { (_, errSignal) =>
-          div(text <-- errSignal.map(_.toString()))
-        }
-        .handleCase { case Some(Right(data)) => data } { (_, signal) =>
-          div(text <-- signal.map(_.toString()))
-        }
-        .toSignal
+      ItemTable()
     )
 
-final class Model:
-  val itemsVar: Var[Option[Either[Throwable, PagedResponse[ItemPartial]]]] =
-    Var(
-      None
-    )
+final class Model
