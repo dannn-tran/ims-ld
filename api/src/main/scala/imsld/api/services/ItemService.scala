@@ -110,7 +110,7 @@ object ItemService:
           text.opt
       )
       .to[ItemPartial]
-      .contramap(p => (p.pageSize * p.pageNumber, p.pageSize))
+      .contramap(p => (p.pageSize * (p.pageNumber - 1), p.pageSize))
 
   val getOneByIdQuery: Query[Int, Item] =
     sql"""

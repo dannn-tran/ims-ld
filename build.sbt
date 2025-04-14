@@ -1,3 +1,5 @@
+import org.scalajs.linker.interface.ModuleSplitStyle
+
 val scala3Version = "3.6.4"
 
 ThisBuild / organization := "com.github.dannn_tran"
@@ -43,9 +45,41 @@ lazy val api = project
       "org.typelevel" %% "munit-cats-effect" % MunitCatsEffectVersion % Test,
       "ch.qos.logback" % "logback-classic" % LogbackVersion % Runtime
     ),
-    Compile / mainClass := Some("imsld.Main")
+    Compile / mainClass := Some("imsld.api.Main")
   )
   .dependsOn(core.jvm)
+
+lazy val dashboard = project
+  .in(file("dashboard"))
+  .enablePlugins(ScalaJSPlugin)
+  .settings(
+    name := "dashboard",
+    // Tell Scala.js that this is an application with a main method
+    scalaJSUseMainModuleInitializer := true,
+
+    /* Configure Scala.js to emit modules in the optimal way to
+     * connect to Vite's incremental reload.
+     * - emit ECMAScript modules
+     * - emit as many small modules as possible for classes in the "dataentry" package
+     * - emit as few (large) modules as possible for all other classes
+     *   (in particular, for the standard library)
+     */
+    scalaJSLinkerConfig ~= {
+      _.withModuleKind(ModuleKind.ESModule)
+        .withModuleSplitStyle(
+          ModuleSplitStyle.SmallModulesFor(List("dashboard"))
+        )
+    },
+    libraryDependencies ++= Seq(
+      "org.scala-js" %%% "scalajs-dom" % "2.8.0",
+      "org.typelevel" %%% "cats-core" % "2.13.0",
+      "com.raquo" %%% "laminar" % "17.2.0",
+      "io.github.cquiroz" %%% "scala-java-time" % "2.5.0",
+      "io.circe" %%% "circe-parser" % CirceVersion,
+      "org.scalameta" %%% "munit" % "1.1.0" % Test
+    )
+  )
+  .dependsOn(core.js)
 
 inThisBuild(
   List(

@@ -14,10 +14,14 @@ import pureconfig.error.ConfigReaderFailures
 import imsld.api.routes.*
 import imsld.api.postgres.PgConnection
 import imsld.api.services.ItemService
+import org.http4s.server.middleware._
 
 object Server {
   private def withLogging[F[_]: Async](httpApp: HttpApp[F]): HttpApp[F] =
     Logger.httpApp(true, true)(ErrorHandling(httpApp))
+
+  private def withCors[F[_]: Async](httpApp: HttpApp[F]): HttpApp[F] =
+    CORS.policy.withAllowOriginAll.withAllowMethodsAll.apply(httpApp)
 
   private def fromConfig[F[_]: Async: Trace: Network: Console](
       config: AppConfig
@@ -35,7 +39,7 @@ object Server {
         .default[F]
         .withHost(config.server.host)
         .withPort(config.server.port)
-        .withHttpApp(withLogging(httpApp))
+        .withHttpApp(withLogging(withCors(httpApp)))
         .build
   } yield server
 

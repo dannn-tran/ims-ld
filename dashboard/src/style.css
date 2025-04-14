@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+h1 {
+  @apply text-2xl font-bold 
+}
+
+h2 {
+  @apply text-lg font-medium
+}
+
+input {
+  @apply border-1 rounded-sm border-gray-200 focus:border-pink-600 px-1 disabled:bg-gray-100 disabled:text-gray-400
+}
+
+button {
+  @apply cursor-pointer border-1 rounded-sm border-gray-500 bg-gray-100 px-1
+}
+
+button:disabled {
+  @apply cursor-not-allowed text-gray-500
+}
+
+th {
+  @apply font-semibold
+}
+
+#app {
+  @apply min-w-4xl
+}
+
+#couchdb-conn-params-form {}
+
+#couchdb-conn-params-form-input {
+  @apply inline-grid grid-cols-4 gap-1 mb-2
+}
+
+#couchdb-conn-params-form-input > input {
+  @apply col-span-3
+}
+
+#couchdb-conn-params-form-btn-container > button {
+  @apply min-w-20
+}
+
+.invalid {
+  @apply text-red-600
+}
+
+input.invalid {
+  @apply border-red-600
+}
+
+input.invalid:focus {
+  @apply outline-red-600
+}
+
+.input-option-container {
+  @apply flex gap-1
+}
+
+#op-mode-fieldset {
+  @apply flex gap-2
+}
+
+#op-mode-fieldset > legend {
+  @apply float-right
+}
+
+#doc-type-fieldset {
+  @apply flex gap-2
+}
+
+#doc-type-fieldset > legend {
+  @apply float-right
+}
+
+.ok {
+  @apply text-green-500
+}
+
+.error {
+  @apply text-red-500
+}
+
+.changed {
+  @apply bg-yellow-200
+}
+
+.to-be-deleted {
+  @apply bg-red-400
+}
