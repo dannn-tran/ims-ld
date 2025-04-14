@@ -42,7 +42,8 @@ lazy val api = project
       "org.scalameta" %% "munit" % MunitVersion % Test,
       "org.typelevel" %% "munit-cats-effect" % MunitCatsEffectVersion % Test,
       "ch.qos.logback" % "logback-classic" % LogbackVersion % Runtime
-    )
+    ),
+    Compile / mainClass := Some("imsld.Main")
   )
   .dependsOn(core.jvm)
 

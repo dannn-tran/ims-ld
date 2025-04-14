@@ -27,7 +27,7 @@ object Server {
     itemService = ItemService(pgSessionPool)
 
     httpApp = Router(
-      "i" -> ItemRouter(itemService).routes
+      "items" -> ItemRouter(itemService).routes
     ).orNotFound
 
     server <-

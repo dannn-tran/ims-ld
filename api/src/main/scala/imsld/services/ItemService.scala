@@ -46,7 +46,7 @@ final case class ItemService[F[_]: Sync](
         paging = PagingResponse(
           pageNumber = pagingRequest.pageNumber,
           pageSize = pagingRequest.pageSize,
-          totalPages = count / pagingRequest.pageSize + 1
+          totalPages = Math.ceilDiv(count, pagingRequest.pageSize)
         )
       )
     }
@@ -91,7 +91,7 @@ object ItemService:
   val countQuery: Query[skunk.Void, Int] =
     sql"""
       SELECT COUNT(*) FROM ITEMS
-    """.query(int4)
+    """.query(int8).map(_.toInt)
 
   val getAllQuery: Query[PagingRequest, ItemPartial] =
     sql"""
