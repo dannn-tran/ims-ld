@@ -1,4 +1,4 @@
-package imsld.services
+package imsld.api.services
 
 import cats.effect.kernel.{Resource, Sync}
 import cats.syntax.all.*
@@ -14,14 +14,14 @@ import imsld.model.{
   ItemPartial,
   MonetaryAmount
 }
-import imsld.services.ItemService.{
+import imsld.api.services.ItemService.{
   getAllQuery,
   getOneByIdQuery,
   insertManyQuery
 }
 import imsld.model.PagedResponse
 import imsld.model.PagingRequest
-import imsld.services.ItemService.countQuery
+import imsld.api.services.ItemService.countQuery
 import imsld.model.PagingResponse
 
 final case class ItemService[F[_]: Sync](
@@ -36,20 +36,22 @@ final case class ItemService[F[_]: Sync](
     }
 
   def getAll(pagingRequest: PagingRequest): F[PagedResponse[ItemPartial]] =
-    pgSessionPool.use { session =>
-      for
-        dataQuery <- session.prepare(getAllQuery)
-        data <- dataQuery.stream(pagingRequest, 64).compile.toList
-        count <- session.unique(countQuery)
-      yield PagedResponse(
-        data = data,
-        paging = PagingResponse(
-          pageNumber = pagingRequest.pageNumber,
-          pageSize = pagingRequest.pageSize,
-          totalPages = Math.ceilDiv(count, pagingRequest.pageSize)
-        )
+    for
+      data <- pgSessionPool.use { session =>
+        for
+          dataQuery <- session.prepare(getAllQuery)
+          data <- dataQuery.stream(pagingRequest, 64).compile.toList
+        yield data
+      }
+      count <- pgSessionPool.use(_.unique(countQuery))
+    yield PagedResponse(
+      data = data,
+      paging = PagingResponse(
+        pageNumber = pagingRequest.pageNumber,
+        pageSize = pagingRequest.pageSize,
+        totalPages = Math.ceilDiv(count, pagingRequest.pageSize)
       )
-    }
+    )
 
   def getOneById(id: Int): F[Option[Item]] =
     pgSessionPool.use { session =>

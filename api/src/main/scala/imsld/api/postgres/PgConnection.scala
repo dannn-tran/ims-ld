@@ -1,4 +1,4 @@
-package imsld.postgres
+package imsld.api.postgres
 
 import cats.effect.std.Console
 import cats.effect.{Resource, Temporal}

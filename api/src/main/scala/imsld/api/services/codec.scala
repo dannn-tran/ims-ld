@@ -1,4 +1,4 @@
-package imsld.services
+package imsld.api.services
 
 import cats.data.State
 import cats.syntax.all.*

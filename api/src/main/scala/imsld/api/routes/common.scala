@@ -1,4 +1,4 @@
-package imsld.routes
+package imsld.api.routes
 
 import org.http4s.dsl.impl.QueryParamDecoderMatcherWithDefault
 

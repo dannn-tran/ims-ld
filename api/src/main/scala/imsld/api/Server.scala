@@ -1,4 +1,4 @@
-package imsld
+package imsld.api
 
 import cats.effect.std.Console
 import cats.effect.{Async, Resource}
@@ -11,9 +11,9 @@ import org.http4s.server.{Router, Server}
 import pureconfig.ConfigSource
 import pureconfig.error.ConfigReaderFailures
 
-import imsld.postgres.*
-import imsld.routes.*
-import imsld.services.*
+import imsld.api.routes.*
+import imsld.api.postgres.PgConnection
+import imsld.api.services.ItemService
 
 object Server {
   private def withLogging[F[_]: Async](httpApp: HttpApp[F]): HttpApp[F] =

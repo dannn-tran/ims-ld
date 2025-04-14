@@ -1,4 +1,4 @@
-package imsld.postgres
+package imsld.api.postgres
 
 final case class PgConfig(
     host: String,

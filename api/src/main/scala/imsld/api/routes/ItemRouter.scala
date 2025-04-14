@@ -1,4 +1,4 @@
-package imsld.routes
+package imsld.api.routes
 
 import cats.effect.Concurrent
 import cats.syntax.all.*
@@ -10,8 +10,8 @@ import org.http4s.dsl.io.*
 import org.http4s.{HttpRoutes, Request, Response}
 
 import imsld.model.ItemDto
-import imsld.services.ItemService
-import imsld.routes.common.*
+import imsld.api.services.ItemService
+import imsld.api.routes.common.*
 import imsld.model.PagingRequest
 
 final class ItemRouter[F[_]: Concurrent](service: ItemService[F])

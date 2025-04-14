@@ -1,11 +1,11 @@
-package imsld
+package imsld.api
 
 import com.comcast.ip4s.{IpAddress, Port}
 import pureconfig.ConfigReader
 import pureconfig.error.CannotConvert
 import pureconfig.generic.derivation.default.derived
 
-import imsld.postgres.PgConfig
+import imsld.api.postgres.PgConfig
 
 final case class AppConfig(
     server: ServerConfig,

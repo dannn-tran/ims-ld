@@ -1,4 +1,4 @@
-package imsld
+package imsld.api
 
 import cats.effect.{IO, IOApp}
 import natchez.Trace.Implicits.noop
