@@ -3,8 +3,6 @@ package imsld.dashboard
 import com.raquo.laminar.api.L.*
 import org.scalajs.dom
 
-val BACKEND_ENDPOINT = "http://localhost:8080"
-
 @main
 def Dashboard(): Unit =
   renderOnDomContentLoaded(

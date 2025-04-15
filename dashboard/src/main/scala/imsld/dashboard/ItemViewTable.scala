@@ -1,14 +1,14 @@
 package imsld.dashboard
 
-import imsld.model.PagedResponse
-import imsld.model.ItemPartial
-import com.raquo.airstream.core.Signal
-import com.raquo.laminar.nodes.ReactiveHtmlElement
-import org.scalajs.dom.HTMLDivElement
-import com.raquo.laminar.api.L.*
-import io.circe.parser.decode
-import io.circe.generic.auto.*
 import cats.syntax.all.*
+import com.raquo.airstream.core.Signal
+import com.raquo.laminar.api.L.*
+import com.raquo.laminar.nodes.ReactiveHtmlElement
+import io.circe.generic.auto.*
+import io.circe.parser.decode
+import org.scalajs.dom.HTMLDivElement
+
+import imsld.model.{ItemPartial, PagedResponse}
 
 object ItemViewTable:
   private val COLUMN_HEADERS: List[String] = List(
@@ -28,12 +28,13 @@ object ItemViewTable:
 
   def apply(): ReactiveHtmlElement[HTMLDivElement] =
     div(
-      FetchStream.get(s"$BACKEND_ENDPOINT/items").recoverToEither --> itemsVar
-        .updater[Either[Throwable, String]] { (_, resp) =>
-          resp match
-            case Left(err)   => Left(err).some
-            case Right(resp) => decode[PagedResponse[ItemPartial]](resp).some
-        },
+      FetchStream
+        .get(s"$BACKEND_ENDPOINT/items")
+        .recoverToEither
+        .map(
+          _.fold(err => Left(err), decode[PagedResponse[ItemPartial]])
+        ) --> itemsVar.writer
+        .contramap[Either[Throwable, PagedResponse[ItemPartial]]](_.some),
       child <-- itemsVar.signal.splitMatchOne
         .handleCase { case Some(Left(err)) => err } { (_, errSignal) =>
           div(text <-- errSignal.map(_.toString()))

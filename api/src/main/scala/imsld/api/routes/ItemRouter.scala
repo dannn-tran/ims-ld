@@ -9,10 +9,9 @@ import org.http4s.dsl.Http4sDsl
 import org.http4s.dsl.io.*
 import org.http4s.{HttpRoutes, Request, Response}
 
-import imsld.model.ItemDto
-import imsld.api.services.ItemService
 import imsld.api.routes.common.*
-import imsld.model.PagingRequest
+import imsld.api.services.ItemService
+import imsld.model.{ItemDto, PagingRequest}
 
 final class ItemRouter[F[_]: Concurrent](service: ItemService[F])
     extends Http4sDsl[F] {

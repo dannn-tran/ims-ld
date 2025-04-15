@@ -7,22 +7,22 @@ import skunk.implicits.*
 import skunk.syntax.*
 import skunk.{Codec, Encoder, Query, Session}
 
+import imsld.api.services.ItemService.{
+  countQuery,
+  getAllQuery,
+  getOneByIdQuery,
+  insertManyQuery
+}
 import imsld.model.{
   InsertedRowWithId,
   Item,
   ItemDto,
   ItemPartial,
-  MonetaryAmount
+  MonetaryAmount,
+  PagedResponse,
+  PagingRequest,
+  PagingResponse
 }
-import imsld.api.services.ItemService.{
-  getAllQuery,
-  getOneByIdQuery,
-  insertManyQuery
-}
-import imsld.model.PagedResponse
-import imsld.model.PagingRequest
-import imsld.api.services.ItemService.countQuery
-import imsld.model.PagingResponse
 
 final case class ItemService[F[_]: Sync](
     pgSessionPool: Resource[F, Session[F]]

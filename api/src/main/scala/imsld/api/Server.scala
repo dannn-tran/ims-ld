@@ -6,15 +6,14 @@ import fs2.io.net.Network
 import natchez.Trace
 import org.http4s.HttpApp
 import org.http4s.ember.server.EmberServerBuilder
-import org.http4s.server.middleware.{ErrorHandling, Logger}
+import org.http4s.server.middleware.{ErrorHandling, Logger, *}
 import org.http4s.server.{Router, Server}
 import pureconfig.ConfigSource
 import pureconfig.error.ConfigReaderFailures
 
-import imsld.api.routes.*
 import imsld.api.postgres.PgConnection
+import imsld.api.routes.*
 import imsld.api.services.ItemService
-import org.http4s.server.middleware._
 
 object Server {
   private def withLogging[F[_]: Async](httpApp: HttpApp[F]): HttpApp[F] =

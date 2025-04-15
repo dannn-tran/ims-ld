@@ -1,21 +1,45 @@
 package imsld.dashboard
 
-import com.raquo.laminar.api.L.*
-import com.raquo.laminar.nodes.ReactiveHtmlElement
-import org.scalajs.dom.HTMLDivElement
-import cats.syntax.all.*
-import java.time.LocalDate
-import scala.util.Try
 import java.text.NumberFormat
+import java.time.LocalDate
 import java.util.Locale
 
+import scala.util.Try
+
+import cats.data.Validated.{Invalid, Valid}
+import cats.data.{NonEmptyChain, Validated, ValidatedNec}
+import cats.syntax.all.*
+import com.raquo.laminar.api.L.*
+import com.raquo.laminar.nodes.ReactiveHtmlElement
+import io.circe.Encoder
+import io.circe.generic.auto.*
+import io.circe.parser.decode
+import io.circe.syntax.*
+import org.scalajs.dom.HTMLDivElement
+
+import imsld.model.{InsertedRowWithId, ItemDto, MonetaryAmount}
+
 object ItemAddTable:
+  given Encoder[ItemDto] = Encoder.derived
+
   private val itemsVar: Var[List[ItemDtoFlat]] = Var(List(ItemDtoFlat()))
+  private val submitBus: EventBus[ValidatedNec[String, List[ItemDto]]] =
+    new EventBus
+  private val localErrVar: Var[Option[String]] = Var(None)
+  private val respVar
+      : Var[Option[Either[Throwable, List[imsld.model.InsertedRowWithId]]]] =
+    Var(None)
 
   def apply(): ReactiveHtmlElement[HTMLDivElement] =
     div(
       controlPanel,
       children <-- itemsVar.signal.splitByIndex { (idx, _, signal) =>
+        div(text <-- signal.map(_.toString()))
+      },
+      child.maybe <-- localErrVar.signal.splitOption { (_, signal) =>
+        div(text <-- signal)
+      },
+      child.maybe <-- respVar.signal.splitOption { (_, signal) =>
         div(text <-- signal.map(_.toString()))
       },
       inputForm
@@ -29,8 +53,58 @@ object ItemAddTable:
           prev.appended(ItemDtoFlat())
         },
         "Add"
+      ),
+      button(
+        typ := "submit",
+        "Submit",
+        onClick.preventDefault.mapTo(getDto) --> submitBus.writer,
+        submitBus.events
+          .collect { case Valid(dto) => dto }
+          .flatMapSwitch { dto =>
+            FetchStream
+              .post(
+                s"$BACKEND_ENDPOINT/items",
+                options =>
+                  options.body(
+                    dto.asJson.noSpaces
+                  )
+              )
+              .recoverToEither
+              .map(_.fold(err => Left(err), decode[List[InsertedRowWithId]]))
+          } --> respVar.writer
+          .contramap[Either[Throwable, List[InsertedRowWithId]]](_.some),
+        submitBus.events.collect { case Invalid(err) =>
+          err
+        } --> localErrVar.writer.contramap[NonEmptyChain[String]](
+          _.toList.mkString("\n").some
+        )
       )
     )
+
+  private def getDto: ValidatedNec[String, List[ItemDto]] =
+    itemsVar.now().traverse(validate)
+
+  private def validate(item: ItemDtoFlat): ValidatedNec[String, ItemDto] =
+    for
+      acquirePrice <- (item.acquirePriceCurrency, item.acquirePriceValue) match
+        case (Some(ccy), Some(value)) => Valid(MonetaryAmount(ccy, value).some)
+        case (_, None)                => Valid(None)
+        case _ =>
+          Invalid(
+            NonEmptyChain(
+              s"Currency of acquisition price must be present when value is present for $item"
+            )
+          )
+      slug = item.slug.map(_.trim()).flatMap { s =>
+        if (s.isEmpty()) None else s.some
+      }
+      label = item.label.map(_.trim()).flatMap { s =>
+        if (s.isEmpty()) None else s.some
+      }
+      acquireSource = item.acquireSource.map(_.trim()).flatMap { s =>
+        if (s.isEmpty()) None else s.some
+      }
+    yield ItemDto(slug, label, item.acquireDate, acquirePrice, acquireSource)
 
   private val inputForm =
     form(
