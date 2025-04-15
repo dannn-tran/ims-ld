@@ -41,6 +41,7 @@ lazy val api = project
       "org.tpolecat" %% "skunk-core" % "0.6.3",
       "org.tpolecat" %% "skunk-circe" % "0.6.3",
       "com.github.pureconfig" %% "pureconfig-core" % "0.17.5",
+      // "org.http4s" %% "http4s-scalatags" % "0.13.1",
       "org.scalameta" %% "munit" % MunitVersion % Test,
       "org.typelevel" %% "munit-cats-effect" % MunitCatsEffectVersion % Test,
       "ch.qos.logback" % "logback-classic" % LogbackVersion % Runtime

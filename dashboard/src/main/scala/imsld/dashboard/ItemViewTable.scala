@@ -3,15 +3,14 @@ package imsld.dashboard
 import imsld.model.PagedResponse
 import imsld.model.ItemPartial
 import com.raquo.airstream.core.Signal
-import com.raquo.airstream.core.Observer
 import com.raquo.laminar.nodes.ReactiveHtmlElement
 import org.scalajs.dom.HTMLDivElement
-import com.raquo.laminar.api.L.{*, given}
+import com.raquo.laminar.api.L.*
 import io.circe.parser.decode
 import io.circe.generic.auto.*
 import cats.syntax.all.*
 
-object ItemTable:
+object ItemViewTable:
   private val COLUMN_HEADERS: List[String] = List(
     "id",
     "slug",
@@ -48,9 +47,12 @@ object ItemTable:
         } { (_, signal) =>
           div(
             div(
-              children <-- signal.map(_.paging.totalPages).map { n =>
-                (1 until n).map { i => button(typ := "button", n) }
-              }
+              div(
+                children <-- signal.map(_.paging.totalPages).map { n =>
+                  (1 until (n + 1)).map { i => button(typ := "button", n) }
+                }
+              ),
+              button(typ := "button", "New")
             ),
             table(
               thead(
