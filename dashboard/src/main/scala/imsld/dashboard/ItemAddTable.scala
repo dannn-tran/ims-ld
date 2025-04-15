@@ -42,7 +42,8 @@ object ItemAddTable:
               "label",
               "acquire date",
               "acquire price",
-              "acquire source"
+              "acquire source",
+              ""
             ).map { h => th(h) }
           )
         ),
@@ -69,6 +70,7 @@ object ItemAddTable:
         )
       )
     )
+
     val labelCell = td(
       textArea(
         controlled(
@@ -89,6 +91,7 @@ object ItemAddTable:
         )
       )
     )
+
     val acquireDateCell = td(
       input(
         typ := "date",
@@ -107,6 +110,7 @@ object ItemAddTable:
         )
       )
     )
+
     def acquirePriceCell =
       val lastGoodPriceValue: Var[String] = Var("")
       td(
@@ -160,6 +164,7 @@ object ItemAddTable:
           size := 16
         )
       )
+
     val acquireSourceCell = td(
       textArea(
         controlled(
@@ -176,12 +181,24 @@ object ItemAddTable:
         )
       )
     )
+
+    val removeRowCell = td(
+      button(
+        typ := "button",
+        onClick --> itemsVar.updater { (lst, _) =>
+          lst.zipWithIndex.collect { case (item, i) if i != idx => item }
+        },
+        "Remove"
+      )
+    )
+
     tr(
       slugCell,
       labelCell,
       acquireDateCell,
       acquirePriceCell,
-      acquireSourceCell
+      acquireSourceCell,
+      removeRowCell
     )
 
   private final case class ItemDtoFlat(
