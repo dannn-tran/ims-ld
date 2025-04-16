@@ -18,29 +18,46 @@ import io.circe.syntax.*
 import org.scalajs.dom.HTMLDivElement
 
 import imsld.model.{InsertedRowWithId, ItemDto, MonetaryAmount}
+import com.raquo.airstream.status.Resolved
+import com.raquo.airstream.status.Pending
 
 object ItemAddTable:
   given Encoder[ItemDto] = Encoder.derived
 
   private val itemsVar: Var[List[ItemDtoFlat]] = Var(List(ItemDtoFlat()))
+  private val localErrVar: Var[Option[String]] = Var(None)
+
   private val submitBus: EventBus[ValidatedNec[String, List[ItemDto]]] =
     new EventBus
-  private val localErrVar: Var[Option[String]] = Var(None)
-  private val respVar
-      : Var[Option[Either[Throwable, List[imsld.model.InsertedRowWithId]]]] =
-    Var(None)
+  private val respStream: EventStream[
+    Status[List[ItemDto], Either[Throwable, List[InsertedRowWithId]]]
+  ] = submitBus.events
+    .collect { case Valid(dto) => dto }
+    .flatMapWithStatus { dto =>
+      FetchStream
+        .post(
+          s"$BACKEND_ENDPOINT/items",
+          options =>
+            options.body(
+              dto.asJson.noSpaces
+            )
+        )
+        .recoverToEither
+        .map(_.fold(err => Left(err), decode[List[InsertedRowWithId]]))
+    }
+  private val lockSignal: Signal[Boolean] = respStream
+    .collect {
+      case Pending(_)               => true
+      case Resolved(_, Right(_), _) => true
+      case _                        => false
+    }
+    .startWith(false)
 
   def apply(): ReactiveHtmlElement[HTMLDivElement] =
     div(
       controlPanel,
-      children <-- itemsVar.signal.splitByIndex { (idx, _, signal) =>
-        div(text <-- signal.map(_.toString()))
-      },
       child.maybe <-- localErrVar.signal.splitOption { (_, signal) =>
-        div(text <-- signal)
-      },
-      child.maybe <-- respVar.signal.splitOption { (_, signal) =>
-        div(text <-- signal.map(_.toString()))
+        div(text <-- signal, cls := "error")
       },
       inputForm
     )
@@ -58,26 +75,28 @@ object ItemAddTable:
         typ := "submit",
         "Submit",
         onClick.preventDefault.mapTo(getDto) --> submitBus.writer,
-        submitBus.events
-          .collect { case Valid(dto) => dto }
-          .flatMapSwitch { dto =>
-            FetchStream
-              .post(
-                s"$BACKEND_ENDPOINT/items",
-                options =>
-                  options.body(
-                    dto.asJson.noSpaces
-                  )
-              )
-              .recoverToEither
-              .map(_.fold(err => Left(err), decode[List[InsertedRowWithId]]))
-          } --> respVar.writer
-          .contramap[Either[Throwable, List[InsertedRowWithId]]](_.some),
         submitBus.events.collect { case Invalid(err) =>
           err
         } --> localErrVar.writer.contramap[NonEmptyChain[String]](
           _.toList.mkString("\n").some
         )
+      ),
+      div(
+        text <-- respStream.splitStatus(
+          (resolve, _) =>
+            resolve.output.fold(
+              err => "Failed to create new items. Error: " + err.toString(),
+              succ =>
+                "New items successfully created. IDs: " + succ
+                  .map(_.id)
+                  .mkString(", ")
+            ),
+          (_, _) => "Submitting..."
+        ),
+        cls("error") <-- respStream.map {
+          case Resolved(_, Left(_), _) => true
+          case _                       => false
+        }
       )
     )
 
@@ -130,130 +149,185 @@ object ItemAddTable:
     )
 
   private def TableBodyRow(idx: Int, signal: Signal[ItemDtoFlat]) =
+    val lockStreamWithSignal = lockSignal.withCurrentValueOf(signal)
+
     val slugCell = td(
-      input(
-        controlled(
-          value <-- signal.map(_.slug.getOrElse("")),
-          onInput.mapToValue --> itemsVar.updater[String] { (lst, str) =>
-            lst.updated(
-              idx,
-              lst(idx)
-                .copy(slug = if (str.isEmpty()) None else str.some)
+      child.maybe <-- lockSignal.splitBoolean(
+        _ => None,
+        _ =>
+          input(
+            controlled(
+              value <-- signal.map(_.slug.getOrElse("")),
+              onInput.mapToValue --> itemsVar.updater[String] { (lst, str) =>
+                lst.updated(
+                  idx,
+                  lst(idx)
+                    .copy(slug = if (str.isEmpty()) None else str.some)
+                )
+              }
             )
-          }
-        )
-      )
+          ).some
+      ),
+      text <-- lockStreamWithSignal.map {
+        case (true, item) => item.slug.getOrElse("")
+        case _            => ""
+      }
     )
 
     val labelCell = td(
-      textArea(
-        controlled(
-          value <-- signal.map(_.label.getOrElse("")),
-          onInput.mapToValue --> itemsVar.updater[String] { (lst, str) =>
-            val processedStr = str.filter { c =>
-              !"\r\n".contains(c)
-            }
-            lst.updated(
-              idx,
-              lst(idx)
-                .copy(label =
-                  if (processedStr.isEmpty()) None
-                  else processedStr.some
+      child.maybe <-- lockSignal.splitBoolean(
+        _ => None,
+        _ =>
+          textArea(
+            controlled(
+              value <-- signal.map(_.label.getOrElse("")),
+              onInput.mapToValue --> itemsVar.updater[String] { (lst, str) =>
+                val processedStr = str.filter { c =>
+                  !"\r\n".contains(c)
+                }
+                lst.updated(
+                  idx,
+                  lst(idx)
+                    .copy(label =
+                      if (processedStr.isEmpty()) None
+                      else processedStr.some
+                    )
                 )
+              }
             )
-          }
-        )
-      )
+          ).some
+      ),
+      text <-- lockStreamWithSignal.map {
+        case (true, item) => item.label.getOrElse("")
+        case _            => ""
+      }
     )
 
     val acquireDateCell = td(
-      input(
-        typ := "date",
-        controlled(
-          value <-- signal.map(
-            _.acquireDate.fold("")(_.toString())
-          ),
-          onInput.mapToValue --> itemsVar
-            .updater[String] { (lst, str) =>
-              lst.updated(
-                idx,
-                lst(idx)
-                  .copy(acquireDate = Try(LocalDate.parse(str)).toOption)
-              )
-            }
-        )
-      )
+      child.maybe <-- lockSignal.splitBoolean(
+        _ => None,
+        _ =>
+          input(
+            typ := "date",
+            controlled(
+              value <-- signal.map(
+                _.acquireDate.fold("")(_.toString())
+              ),
+              onInput.mapToValue --> itemsVar
+                .updater[String] { (lst, str) =>
+                  lst.updated(
+                    idx,
+                    lst(idx)
+                      .copy(acquireDate = Try(LocalDate.parse(str)).toOption)
+                  )
+                }
+            )
+          ).some
+      ),
+      text <-- lockStreamWithSignal.map {
+        case (true, item) => item.acquireDate.fold("")(_.toString())
+        case _            => ""
+      }
     )
 
     def acquirePriceCell =
       val lastGoodPriceValue: Var[String] = Var("")
       td(
-        input(
-          cls := "ItemAddTable-acquirePriceCell-ccy",
-          placeholder := "ccy",
-          controlled(
-            value <-- signal.map(_.acquirePriceCurrency.getOrElse("")),
-            onInput.mapToValue --> itemsVar
-              .updater[String] { (lst, str) =>
-                lst.updated(
-                  idx,
-                  lst(idx).copy(acquirePriceCurrency =
-                    if (str.isEmpty()) None else str.some
-                  )
-                )
-              }
-          ),
-          listId := "defaultCurrencies",
-          size := 8
-        ),
-        dataList(
-          idAttr := "defaultCurrencies",
-          List("SGD", "USD", "EUR", "VND").map { ccy =>
-            option(value := ccy)
-          }
-        ),
-        input(
-          placeholder := "value",
-          controlled(
-            value <-- lastGoodPriceValue.signal,
-            onInput.mapToValue --> lastGoodPriceValue.writer
-          ),
-          lastGoodPriceValue.signal --> itemsVar.updater[String] { (lst, str) =>
-            lst.updated(
-              idx,
-              lst(idx).copy(acquirePriceValue =
-                Try(BigDecimal(str.filter(_ != ','))).toOption
+        children <-- lockSignal.splitBoolean(
+          _ => List.empty,
+          _ =>
+            List(
+              input(
+                cls := "ItemAddTable-acquirePriceCell-ccy",
+                placeholder := "ccy",
+                controlled(
+                  value <-- signal.map(_.acquirePriceCurrency.getOrElse("")),
+                  onInput.mapToValue --> itemsVar
+                    .updater[String] { (lst, str) =>
+                      lst.updated(
+                        idx,
+                        lst(idx).copy(acquirePriceCurrency =
+                          if (str.isEmpty()) None else str.some
+                        )
+                      )
+                    }
+                ),
+                listId := "defaultCurrencies",
+                size := 8,
+                cls("error") <-- signal.map { i =>
+                  (i.acquirePriceCurrency, i.acquirePriceValue) match {
+                    case (Some(ccy), Some(_)) if !ccy.isBlank() => true
+                    case _                                      => false
+                  }
+                }
+              ),
+              dataList(
+                idAttr := "defaultCurrencies",
+                List("SGD", "USD", "EUR", "VND").map { ccy =>
+                  option(value := ccy)
+                }
+              ),
+              input(
+                placeholder := "value",
+                controlled(
+                  value <-- lastGoodPriceValue.signal,
+                  onInput.mapToValue --> lastGoodPriceValue.writer
+                ),
+                lastGoodPriceValue.signal --> itemsVar.updater[String] {
+                  (lst, str) =>
+                    lst.updated(
+                      idx,
+                      lst(idx).copy(acquirePriceValue =
+                        Try(BigDecimal(str.filter(_ != ','))).toOption
+                      )
+                    )
+                },
+                signal.map(_.acquirePriceValue) --> lastGoodPriceValue
+                  .updater[Option[BigDecimal]] { (prev, opt) =>
+                    opt.fold(prev) { bd =>
+                      val formatter = NumberFormat.getInstance(Locale.US)
+                      formatter.setMaximumFractionDigits(bd.scale)
+                      formatter.setMinimumFractionDigits(bd.scale)
+                      formatter.format(bd)
+                    }
+                  },
+                size := 16
               )
             )
-          },
-          signal.map(_.acquirePriceValue) --> lastGoodPriceValue
-            .updater[Option[BigDecimal]] { (prev, opt) =>
-              opt.fold(prev) { bd =>
-                val formatter = NumberFormat.getInstance(Locale.US)
-                formatter.setMaximumFractionDigits(bd.scale)
-                formatter.setMinimumFractionDigits(bd.scale)
-                formatter.format(bd)
-              }
-            },
-          size := 16
-        )
+        ),
+        text <-- lockStreamWithSignal.map {
+          case (true, item) =>
+            List(
+              item.acquirePriceCurrency.getOrElse(""),
+              item.acquirePriceValue.toString()
+            ).filter(!_.isBlank()).mkString(" ")
+          case _ => ""
+        }
       )
 
     val acquireSourceCell = td(
-      textArea(
-        controlled(
-          value <-- signal.map(_.acquireSource.getOrElse("")),
-          onInput.mapToValue --> itemsVar
-            .updater[String] { (lst, str) =>
-              lst.updated(
-                idx,
-                lst(idx).copy(acquireSource =
-                  if (str.isEmpty()) None else str.some
-                )
-              )
-            }
-        )
-      )
+      child.maybe <-- lockSignal.splitBoolean(
+        _ => None,
+        _ =>
+          textArea(
+            controlled(
+              value <-- signal.map(_.acquireSource.getOrElse("")),
+              onInput.mapToValue --> itemsVar
+                .updater[String] { (lst, str) =>
+                  lst.updated(
+                    idx,
+                    lst(idx).copy(acquireSource =
+                      if (str.isEmpty()) None else str.some
+                    )
+                  )
+                }
+            )
+          ).some
+      ),
+      text <-- lockStreamWithSignal.map {
+        case (true, item) => item.acquireSource.getOrElse("")
+        case _            => ""
+      }
     )
 
     val removeRowCell = td(
@@ -262,7 +336,8 @@ object ItemAddTable:
         onClick --> itemsVar.updater { (lst, _) =>
           lst.zipWithIndex.collect { case (item, i) if i != idx => item }
         },
-        "Remove"
+        "Remove",
+        disabled <-- lockSignal
       )
     )
 
