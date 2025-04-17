@@ -11,7 +11,7 @@ import org.http4s.{HttpRoutes, Request, Response}
 
 import imsld.api.routes.common.*
 import imsld.api.services.ItemService
-import imsld.model.{ItemDto, PagingRequest}
+import imsld.model.{ItemNew, PagingRequest}
 
 final class ItemRouter[F[_]: Concurrent](service: ItemService[F])
     extends Http4sDsl[F] {
@@ -35,7 +35,7 @@ final class ItemRouter[F[_]: Concurrent](service: ItemService[F])
 
       case req @ POST -> Root =>
         req
-          .attemptAs[List[ItemDto]]
+          .attemptAs[List[ItemNew]]
           .foldF(
             err => BadRequest(err.toString),
             docs =>

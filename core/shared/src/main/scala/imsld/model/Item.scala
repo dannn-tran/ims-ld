@@ -22,7 +22,7 @@ final case class ItemPartial(
     acquireSource: Option[String]
 ) extends WithId
 
-final case class ItemDto(
+final case class ItemNew(
     slug: Option[String],
     label: Option[String],
     acquireDate: Option[LocalDate],

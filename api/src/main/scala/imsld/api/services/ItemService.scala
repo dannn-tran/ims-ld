@@ -7,61 +7,22 @@ import skunk.implicits.*
 import skunk.syntax.*
 import skunk.{Codec, Encoder, Query, Session}
 
-import imsld.api.services.ItemService.{
-  countQuery,
-  getAllQuery,
-  getOneByIdQuery,
-  insertManyQuery
-}
 import imsld.model.{
   InsertedRowWithId,
   Item,
-  ItemDto,
+  ItemNew,
   ItemPartial,
   MonetaryAmount,
-  PagedResponse,
-  PagingRequest,
-  PagingResponse
+  PagingRequest
 }
+
+given ServiceCompanion[Item, ItemNew, ItemPartial] = ItemService
 
 final case class ItemService[F[_]: Sync](
     pgSessionPool: Resource[F, Session[F]]
-):
-  def insertMany(items: List[ItemDto]): F[List[InsertedRowWithId]] =
-    pgSessionPool.use { session =>
-      for
-        query <- session.prepare(insertManyQuery(items.length))
-        ids <- query.stream(items, 64).compile.toList
-      yield ids
-    }
+) extends ServiceBase(pgSessionPool)
 
-  def getAll(pagingRequest: PagingRequest): F[PagedResponse[ItemPartial]] =
-    for
-      data <- pgSessionPool.use { session =>
-        for
-          dataQuery <- session.prepare(getAllQuery)
-          data <- dataQuery.stream(pagingRequest, 64).compile.toList
-        yield data
-      }
-      count <- pgSessionPool.use(_.unique(countQuery))
-    yield PagedResponse(
-      data = data,
-      paging = PagingResponse(
-        pageNumber = pagingRequest.pageNumber,
-        pageSize = pagingRequest.pageSize,
-        totalPages = Math.ceilDiv(count, pagingRequest.pageSize)
-      )
-    )
-
-  def getOneById(id: Int): F[Option[Item]] =
-    pgSessionPool.use { session =>
-      for
-        ps <- session.prepare(getOneByIdQuery)
-        item <- ps.option(id)
-      yield item
-    }
-
-object ItemService:
+object ItemService extends ServiceCompanion[Item, ItemNew, ItemPartial]:
   val monetary_amount: Codec[MonetaryAmount] = CompositeTypeCodec
     .mkComposite(
       varchar(3) *: numeric(9, 2),
@@ -69,22 +30,22 @@ object ItemService:
     )
     .imap(MonetaryAmount.apply)(a => a.currency -> a.value)
 
-  val itemDtoEnc: Encoder[ItemDto] =
+  val itemNewEnc: Encoder[ItemNew] =
     (varchar(64).opt *: text.opt *: date.opt *: monetary_amount.opt *: text.opt)
-      .contramap(dto =>
+      .contramap { obj =>
         (
-          dto.slug,
-          dto.label,
-          dto.acquireDate,
-          dto.acquirePrice,
-          dto.acquireSource
+          obj.slug,
+          obj.label,
+          obj.acquireDate,
+          obj.acquirePrice,
+          obj.acquireSource
         )
-      )
+      }
 
-  def insertManyQuery(n: Int): Query[List[ItemDto], InsertedRowWithId] =
+  def insertManyQuery(n: Int): Query[List[ItemNew], InsertedRowWithId] =
     sql"""
       INSERT INTO items (slug, label, acquire_date, acquire_price, acquire_source)
-      VALUES ${itemDtoEnc.values.list(n)}
+      VALUES ${itemNewEnc.values.list(n)}
       RETURNING id
     """
       .query(int4)

@@ -19,18 +19,18 @@ import io.circe.syntax.*
 import org.scalajs.dom.HTMLDivElement
 
 import imsld.dashboard.BACKEND_ENDPOINT
-import imsld.model.{InsertedRowWithId, ItemDto, MonetaryAmount}
+import imsld.model.{InsertedRowWithId, ItemNew, MonetaryAmount}
 
 object ItemAddBulkView:
-  given Encoder[ItemDto] = Encoder.derived
+  given Encoder[ItemNew] = Encoder.derived
 
   private val itemsVar: Var[List[ItemDtoFlat]] = Var(List(ItemDtoFlat()))
   private val localErrVar: Var[Option[String]] = Var(None)
 
-  private val submitBus: EventBus[ValidatedNec[String, List[ItemDto]]] =
+  private val submitBus: EventBus[ValidatedNec[String, List[ItemNew]]] =
     new EventBus
   private val respStream: EventStream[
-    Status[List[ItemDto], Either[Throwable, List[InsertedRowWithId]]]
+    Status[List[ItemNew], Either[Throwable, List[InsertedRowWithId]]]
   ] = submitBus.events
     .collect { case Valid(dto) => dto }
     .flatMapWithStatus { dto =>
@@ -101,10 +101,10 @@ object ItemAddBulkView:
       )
     )
 
-  private def getDto: ValidatedNec[String, List[ItemDto]] =
+  private def getDto: ValidatedNec[String, List[ItemNew]] =
     itemsVar.now().traverse(validate)
 
-  private def validate(item: ItemDtoFlat): ValidatedNec[String, ItemDto] =
+  private def validate(item: ItemDtoFlat): ValidatedNec[String, ItemNew] =
     for
       acquirePrice <- (item.acquirePriceCurrency, item.acquirePriceValue) match
         case (Some(ccy), Some(value)) => Valid(MonetaryAmount(ccy, value).some)
@@ -124,7 +124,7 @@ object ItemAddBulkView:
       acquireSource = item.acquireSource.map(_.trim()).flatMap { s =>
         if (s.isEmpty()) None else s.some
       }
-    yield ItemDto(slug, label, item.acquireDate, acquirePrice, acquireSource)
+    yield ItemNew(slug, label, item.acquireDate, acquirePrice, acquireSource)
 
   private val inputForm =
     form(
