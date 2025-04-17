@@ -2,8 +2,7 @@ package imsld.dashboard
 
 import com.raquo.laminar.api.L.*
 
-import imsld.dashboard.pages.{ItemAddBulkPage, ItemViewAllPage}
-import imsld.dashboard.pages.HomePage
+import imsld.dashboard.pages.{HomePage, ItemAddBulkPage, ItemViewAllPage}
 
 object Navbar:
 

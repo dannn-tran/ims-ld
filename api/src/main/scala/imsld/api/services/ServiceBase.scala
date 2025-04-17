@@ -18,6 +18,8 @@ abstract class ServiceBase[F[_]: Sync, T, TNew, TPartial](
     pgSessionPool.use { session =>
       for
         query <- session.prepare(companion.insertManyQuery(objs.length))
+        // TODO: handle .recoverWith { case SqlState.UniqueViolation(ex) =>  ...}
+        // TODO: handle .recoverWith { case SqlState.ForeignKeyViolation(ex) =>  ...}
         ids <- query.stream(objs, 64).compile.toList
       yield ids
     }

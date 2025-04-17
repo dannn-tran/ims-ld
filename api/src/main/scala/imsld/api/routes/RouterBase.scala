@@ -10,8 +10,8 @@ import org.http4s.dsl.io.*
 import org.http4s.{HttpRoutes, Request, Response}
 
 import imsld.api.routes.common.*
-import imsld.model.PagingRequest
 import imsld.api.services.ServiceBase
+import imsld.model.PagingRequest
 
 abstract class RouterBase[
     F[_]: Concurrent,

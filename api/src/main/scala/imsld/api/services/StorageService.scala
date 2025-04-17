@@ -9,10 +9,10 @@ import skunk.{Codec, Encoder, Query, Session}
 
 import imsld.model.{
   InsertedRowWithId,
+  PagingRequest,
   Storage,
   StorageNew,
-  StoragePartial,
-  PagingRequest
+  StoragePartial
 }
 
 given PgStatementProvider[Storage, StorageNew, StoragePartial] = StorageService

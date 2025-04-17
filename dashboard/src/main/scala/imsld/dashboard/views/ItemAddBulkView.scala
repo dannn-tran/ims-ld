@@ -124,7 +124,15 @@ object ItemAddBulkView:
       acquireSource = item.acquireSource.map(_.trim()).flatMap { s =>
         if (s.isEmpty()) None else s.some
       }
-    yield ItemNew(slug, label, item.acquireDate, acquirePrice, acquireSource)
+    yield ItemNew(
+      slug,
+      label,
+      item.acquireDate,
+      acquirePrice,
+      acquireSource,
+      None,
+      None
+    )
 
   private val inputForm =
     form(

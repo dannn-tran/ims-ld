@@ -16,9 +16,7 @@ object ItemViewAllView:
     "id",
     "slug",
     "label",
-    "acquire date",
-    "acquire price",
-    "acquire source"
+    "acquire date"
   )
 
   private val itemsVar
@@ -70,9 +68,7 @@ object ItemViewAllView:
                       td(item.id),
                       td(item.slug),
                       td(item.label),
-                      td(item.acquireDate.map(_.toString())),
-                      td(item.acquirePrice.map(_.toString())),
-                      td(item.acquireSource)
+                      td(item.acquireDate.map(_.toString()))
                     )
                   }
                 }
