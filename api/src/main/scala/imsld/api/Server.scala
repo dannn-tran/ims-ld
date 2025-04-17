@@ -13,7 +13,7 @@ import pureconfig.error.ConfigReaderFailures
 
 import imsld.api.postgres.PgConnection
 import imsld.api.routes.*
-import imsld.api.services.ItemService
+import imsld.api.services.*
 
 object Server {
   private def withLogging[F[_]: Async](httpApp: HttpApp[F]): HttpApp[F] =
@@ -28,9 +28,11 @@ object Server {
     pgSessionPool <- PgConnection.pooled(config.postgres)
 
     itemService = ItemService(pgSessionPool)
+    storageService = StorageService(pgSessionPool)
 
     httpApp = Router(
-      "items" -> ItemRouter(itemService).routes
+      "items" -> ItemRouter(itemService).routes,
+      "storages" -> StorageRouter(storageService).routes
     ).orNotFound
 
     server <-

@@ -65,10 +65,12 @@ object ItemService extends PgStatementProvider[Item, ItemNew, ItemPartial]:
       LIMIT $int4
     """
       .query(
-        int4 *: varchar(
-          64
-        ).opt *: text.opt *: date.opt *: monetary_amount.opt *:
-          text.opt
+        int4
+          *: varchar(64).opt
+          *: text.opt
+          *: date.opt
+          *: monetary_amount.opt
+          *: text.opt
       )
       .to[ItemPartial]
       .contramap(p => (p.pageSize * (p.pageNumber - 1), p.pageSize))
