@@ -1,4 +1,4 @@
-package imsld.dashboard
+package imsld.dashboard.views
 
 import cats.syntax.all.*
 import com.raquo.airstream.core.Signal
@@ -8,9 +8,10 @@ import io.circe.generic.auto.*
 import io.circe.parser.decode
 import org.scalajs.dom.HTMLDivElement
 
+import imsld.dashboard.BACKEND_ENDPOINT
 import imsld.model.{ItemPartial, PagedResponse}
 
-object ItemViewTable:
+object ItemViewAllView:
   private val COLUMN_HEADERS: List[String] = List(
     "id",
     "slug",

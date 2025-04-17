@@ -75,6 +75,8 @@ lazy val dashboard = project
       "org.scala-js" %%% "scalajs-dom" % "2.8.0",
       "org.typelevel" %%% "cats-core" % "2.13.0",
       "com.raquo" %%% "laminar" % "17.2.0",
+      "com.raquo" %%% "waypoint" % "9.0.0",
+      "be.doeraene" %%% "url-dsl" % "0.6.2",
       "io.github.cquiroz" %%% "scala-java-time" % "2.5.0",
       "io.circe" %%% "circe-parser" % CirceVersion,
       "org.scalameta" %%% "munit" % "1.1.0" % Test

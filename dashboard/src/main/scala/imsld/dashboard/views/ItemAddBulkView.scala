@@ -1,4 +1,4 @@
-package imsld.dashboard
+package imsld.dashboard.views
 
 import java.text.NumberFormat
 import java.time.LocalDate
@@ -9,6 +9,7 @@ import scala.util.Try
 import cats.data.Validated.{Invalid, Valid}
 import cats.data.{NonEmptyChain, Validated, ValidatedNec}
 import cats.syntax.all.*
+import com.raquo.airstream.status.{Pending, Resolved}
 import com.raquo.laminar.api.L.*
 import com.raquo.laminar.nodes.ReactiveHtmlElement
 import io.circe.Encoder
@@ -17,11 +18,10 @@ import io.circe.parser.decode
 import io.circe.syntax.*
 import org.scalajs.dom.HTMLDivElement
 
+import imsld.dashboard.BACKEND_ENDPOINT
 import imsld.model.{InsertedRowWithId, ItemDto, MonetaryAmount}
-import com.raquo.airstream.status.Resolved
-import com.raquo.airstream.status.Pending
 
-object ItemAddTable:
+object ItemAddBulkView:
   given Encoder[ItemDto] = Encoder.derived
 
   private val itemsVar: Var[List[ItemDtoFlat]] = Var(List(ItemDtoFlat()))

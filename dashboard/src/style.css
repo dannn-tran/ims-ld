@@ -5,3 +5,7 @@ table {
 .ItemAddTable-acquirePriceCell-ccy {
   margin-right: 4px;
 }
+
+.error {
+  color: red;
+}
