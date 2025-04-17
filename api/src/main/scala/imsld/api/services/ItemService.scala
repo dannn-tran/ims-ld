@@ -16,13 +16,13 @@ import imsld.model.{
   PagingRequest
 }
 
-given ServiceCompanion[Item, ItemNew, ItemPartial] = ItemService
+given PgStatementProvider[Item, ItemNew, ItemPartial] = ItemService
 
 final case class ItemService[F[_]: Sync](
     pgSessionPool: Resource[F, Session[F]]
-) extends ServiceBase(pgSessionPool)
+) extends ServiceBase[F, Item, ItemNew, ItemPartial](pgSessionPool)
 
-object ItemService extends ServiceCompanion[Item, ItemNew, ItemPartial]:
+object ItemService extends PgStatementProvider[Item, ItemNew, ItemPartial]:
   val monetary_amount: Codec[MonetaryAmount] = CompositeTypeCodec
     .mkComposite(
       varchar(3) *: numeric(9, 2),
@@ -53,7 +53,7 @@ object ItemService extends ServiceCompanion[Item, ItemNew, ItemPartial]:
 
   val countQuery: Query[skunk.Void, Int] =
     sql"""
-      SELECT COUNT(*) FROM ITEMS
+      SELECT COUNT(*) FROM items
     """.query(int8).map(_.toInt)
 
   val getAllQuery: Query[PagingRequest, ItemPartial] =

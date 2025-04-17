@@ -5,20 +5,29 @@ CREATE TYPE monetary_amount AS (
 
 -- Base objects
 
+CREATE TABLE storages (
+  id INT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  slug VARCHAR(64) UNIQUE,
+  label TEXT,
+  description TEXT
+);
+
 CREATE TABLE items (
   id INT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
   slug VARCHAR(64) UNIQUE,
   label TEXT,
   acquire_date DATE,
   acquire_price monetary_amount,
-  acquire_source TEXT
+  acquire_source TEXT,
+  storage_id INT REFERENCES storages(id),
+  details TEXT
 );
 
 CREATE UNIQUE INDEX item_by_slug ON items(slug);
 
 CREATE TABLE entities (
   id INT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-  slug VARCHAR(64),
+  slug VARCHAR(64) UNIQUE,
   label TEXT
 );
 
@@ -26,7 +35,7 @@ CREATE UNIQUE INDEX entity_by_slug ON entities(slug);
 
 CREATE TABLE collections (
   id INT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-  slug VARCHAR(64),
+  slug VARCHAR(64) UNIQUE,
   label TEXT
 );
 

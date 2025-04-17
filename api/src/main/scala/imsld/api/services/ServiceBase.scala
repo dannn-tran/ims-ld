@@ -13,7 +13,7 @@ import imsld.model.{
 
 abstract class ServiceBase[F[_]: Sync, T, TNew, TPartial](
     pgSessionPool: Resource[F, Session[F]]
-)(implicit companion: ServiceCompanion[T, TNew, TPartial]):
+)(implicit companion: PgStatementProvider[T, TNew, TPartial]):
   def insertMany(objs: List[TNew]): F[List[InsertedRowWithId]] =
     pgSessionPool.use { session =>
       for
@@ -44,11 +44,11 @@ abstract class ServiceBase[F[_]: Sync, T, TNew, TPartial](
     pgSessionPool.use { session =>
       for
         ps <- session.prepare(companion.getOneByIdQuery)
-        item <- ps.option(id)
-      yield item
+        obj <- ps.option(id)
+      yield obj
     }
 
-trait ServiceCompanion[T, TNew, TPartial]:
+trait PgStatementProvider[T, TNew, TPartial]:
   def insertManyQuery(n: Int): Query[List[TNew], InsertedRowWithId]
   def getAllQuery: Query[PagingRequest, TPartial]
   def getOneByIdQuery: Query[Int, T]
