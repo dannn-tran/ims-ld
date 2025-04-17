@@ -29,6 +29,7 @@ object ItemViewAllView:
 
   def apply(): ReactiveHtmlElement[HTMLDivElement] =
     div(
+      h1("All Items"),
       FetchStream
         .get(s"$BACKEND_ENDPOINT/items")
         .recoverToEither

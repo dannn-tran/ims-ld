@@ -1,5 +1,44 @@
+/*
+@media (min-width: 640px) { ... }
+@media (min-width: 768px) { ... }
+@media (min-width: 1024px) { ... }
+@media (min-width: 1280px) { ... }
+*/
+
 table {
   border-spacing: 4px;
+}
+
+body {
+  display: flex;
+  justify-content: center;
+}
+
+#app {
+  width: 100%;
+  display: flex;
+  gap: 12px;
+}
+
+@media (min-width: 1024px) { 
+  #app {
+    width: 75%;
+  }
+}
+
+@media (min-width: 1280px) { 
+  #app {
+    width: 60%;
+  }
+}
+
+.navbar-navgroup-items {
+  display: flex;
+  flex-direction: column;
+}
+
+#navbar a {
+  text-decoration: none;
 }
 
 .ItemAddTable-acquirePriceCell-ccy {

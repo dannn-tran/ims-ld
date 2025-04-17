@@ -55,6 +55,7 @@ object ItemAddBulkView:
 
   def apply(): ReactiveHtmlElement[HTMLDivElement] =
     div(
+      h1("Bulk item creation"),
       controlPanel,
       child.maybe <-- localErrVar.signal.splitOption { (_, signal) =>
         div(text <-- signal, cls := "error")

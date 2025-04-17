@@ -4,10 +4,11 @@ import io.circe.Codec
 
 object pages {
   sealed trait Page(val title: String)
-  sealed abstract class PageWithTitle(title: String) extends Page(title)
 
-  case object ItemViewAllPage extends PageWithTitle("Items - View")
-  case object ItemAddBulkPage extends PageWithTitle("Items - Bulk Creation")
+  case object HomePage
+      extends Page("Inventory Management System with Linked Data")
+  case object ItemViewAllPage extends Page("Items - View")
+  case object ItemAddBulkPage extends Page("Items - Bulk Creation")
   case object NotFoundPage extends Page("Not Found")
 
   given pageCodec: Codec[Page] = Codec.derived
