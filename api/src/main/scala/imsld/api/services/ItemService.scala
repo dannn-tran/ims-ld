@@ -35,7 +35,7 @@ object ItemService extends PgStatementProvider[Item, ItemNew, ItemPartial]:
     (
       varchar(64).opt
         *: text.opt
-        *: date.opt
+        *: varchar(10).opt
         *: monetary_amount.opt
         *: text.opt
         *: int4.opt
@@ -79,7 +79,7 @@ object ItemService extends PgStatementProvider[Item, ItemNew, ItemPartial]:
         int4
           *: varchar(64).opt
           *: text.opt
-          *: date.opt
+          *: varchar(10).opt
       )
       .to[ItemPartial]
       .contramap(p => (p.pageSize * (p.pageNumber - 1), p.pageSize))
@@ -96,7 +96,7 @@ object ItemService extends PgStatementProvider[Item, ItemNew, ItemPartial]:
         int4 // i.id
           *: varchar(64).opt // i.slug
           *: text.opt // i.label
-          *: date.opt // i.acquire_date
+          *: varchar(10).opt // i.acquire_date
           *: monetary_amount.opt // i.acquire_price
           *: text.opt // i.acquire_source
           *: int4.opt // i.storage_id

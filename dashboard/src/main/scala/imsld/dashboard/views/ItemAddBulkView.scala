@@ -1,7 +1,6 @@
 package imsld.dashboard.views
 
 import java.text.NumberFormat
-import java.time.LocalDate
 import java.util.Locale
 
 import scala.util.Try
@@ -217,7 +216,6 @@ object ItemAddBulkView:
         _ => None,
         _ =>
           input(
-            typ := "date",
             controlled(
               value <-- signal.map(
                 _.acquireDate.fold("")(_.toString())
@@ -227,7 +225,7 @@ object ItemAddBulkView:
                   lst.updated(
                     idx,
                     lst(idx)
-                      .copy(acquireDate = Try(LocalDate.parse(str)).toOption)
+                      .copy(acquireDate = str.some)
                   )
                 }
             )
@@ -362,7 +360,7 @@ object ItemAddBulkView:
   private final case class ItemDtoFlat(
       slug: Option[String] = None,
       label: Option[String] = None,
-      acquireDate: Option[LocalDate] = None,
+      acquireDate: Option[String] = None,
       acquirePriceCurrency: Option[String] = None,
       acquirePriceValue: Option[BigDecimal] = None,
       acquireSource: Option[String] = None
