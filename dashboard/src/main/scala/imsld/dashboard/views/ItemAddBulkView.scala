@@ -44,7 +44,13 @@ object ItemAddBulkView:
         .recoverToEither
         .map(_.fold(err => Left(err), decode[List[InsertedRowWithId]]))
     }
-  private val lockSignal: Signal[Boolean] = respStream
+  private val inflightSubmitSignal: Signal[Boolean] = respStream
+    .collect {
+      case Pending(_) => true
+      case _          => false
+    }
+    .startWith(false)
+  private val inflightSubmitOrResolvedRightSignal: Signal[Boolean] = respStream
     .collect {
       case Pending(_)               => true
       case Resolved(_, Right(_), _) => true
@@ -69,7 +75,8 @@ object ItemAddBulkView:
         onClick --> itemsVar.updater { (prev, _) =>
           prev.appended(ItemDtoFlat())
         },
-        "Add"
+        "Add",
+        disabled <-- inflightSubmitOrResolvedRightSignal
       ),
       button(
         typ := "submit",
@@ -79,7 +86,14 @@ object ItemAddBulkView:
           err
         } --> localErrVar.writer.contramap[NonEmptyChain[String]](
           _.toList.mkString("\n").some
-        )
+        ),
+        disabled <-- inflightSubmitOrResolvedRightSignal
+      ),
+      button(
+        typ := "button",
+        "Clear",
+        onClick.mapTo(List.empty) --> itemsVar.writer,
+        disabled <-- inflightSubmitSignal
       ),
       div(
         text <-- respStream.splitStatus(
@@ -141,9 +155,11 @@ object ItemAddBulkView:
             List(
               "slug",
               "label",
+              "publish date",
               "acquire date",
               "acquire price",
               "acquire source",
+              "details",
               ""
             ).map { h => th(h) }
           )
@@ -157,90 +173,99 @@ object ItemAddBulkView:
     )
 
   private def TableBodyRow(idx: Int, signal: Signal[ItemDtoFlat]) =
-    val lockStreamWithSignal = lockSignal.withCurrentValueOf(signal)
+    val lockAndItemSignal =
+      inflightSubmitOrResolvedRightSignal.combineWith(signal)
 
-    val slugCell = td(
-      child.maybe <-- lockSignal.splitBoolean(
+    def mkTextInputCell(
+        accessor: ItemDtoFlat => String,
+        updater: Observer[String]
+    ) = td(
+      child.maybe <-- inflightSubmitOrResolvedRightSignal.splitBoolean(
         _ => None,
         _ =>
           input(
             controlled(
-              value <-- signal.map(_.slug.getOrElse("")),
-              onInput.mapToValue --> itemsVar.updater[String] { (lst, str) =>
-                lst.updated(
-                  idx,
-                  lst(idx)
-                    .copy(slug = if (str.isEmpty()) None else str.some)
-                )
-              }
+              value <-- signal.map(accessor),
+              onInput.mapToValue --> updater
             )
           ).some
       ),
-      text <-- lockStreamWithSignal.map {
-        case (true, item) => item.slug.getOrElse("")
+      text <-- lockAndItemSignal.map {
+        case (true, item) => accessor(item)
         case _            => ""
       }
     )
 
-    val labelCell = td(
-      child.maybe <-- lockSignal.splitBoolean(
+    def mkTextAreaCell(
+        accessor: ItemDtoFlat => String,
+        updater: Observer[String]
+    ) = td(
+      child.maybe <-- inflightSubmitOrResolvedRightSignal.splitBoolean(
         _ => None,
         _ =>
           textArea(
             controlled(
-              value <-- signal.map(_.label.getOrElse("")),
-              onInput.mapToValue --> itemsVar.updater[String] { (lst, str) =>
-                val processedStr = str.filter { c =>
-                  !"\r\n".contains(c)
-                }
-                lst.updated(
-                  idx,
-                  lst(idx)
-                    .copy(label =
-                      if (processedStr.isEmpty()) None
-                      else processedStr.some
-                    )
-                )
-              }
+              value <-- signal.map(accessor),
+              onInput.mapToValue --> updater
             )
           ).some
       ),
-      text <-- lockStreamWithSignal.map {
-        case (true, item) => item.label.getOrElse("")
+      text <-- lockAndItemSignal.map {
+        case (true, item) => accessor(item)
         case _            => ""
       }
     )
 
-    val acquireDateCell = td(
-      child.maybe <-- lockSignal.splitBoolean(
-        _ => None,
-        _ =>
-          input(
-            controlled(
-              value <-- signal.map(
-                _.acquireDate.fold("")(_.toString())
-              ),
-              onInput.mapToValue --> itemsVar
-                .updater[String] { (lst, str) =>
-                  lst.updated(
-                    idx,
-                    lst(idx)
-                      .copy(acquireDate = str.some)
-                  )
-                }
-            )
-          ).some
-      ),
-      text <-- lockStreamWithSignal.map {
-        case (true, item) => item.acquireDate.fold("")(_.toString())
-        case _            => ""
+    val slugCell = mkTextInputCell(
+      accessor = _.slug.getOrElse(""),
+      updater = itemsVar.updater { (lst, slug) =>
+        lst.updated(idx, lst(idx).copy(slug = slug.some))
       }
+    )
+
+    val labelCell = mkTextAreaCell(
+      accessor = _.label.getOrElse(""),
+      updater = itemsVar.updater { (lst, str) =>
+        val processedStr = str.filter { c =>
+          !"\r\n".contains(c)
+        }
+        lst.updated(
+          idx,
+          lst(idx)
+            .copy(label =
+              if (processedStr.isEmpty()) None
+              else processedStr.some
+            )
+        )
+      }
+    )
+
+    val publishDateCell = mkTextInputCell(
+      accessor = _.publishDate.getOrElse(""),
+      updater = itemsVar.updater { (lst, str) =>
+        lst.updated(
+          idx,
+          lst(idx).copy(publishDate = str.some)
+        )
+      }
+    )
+
+    val acquireDateCell = mkTextInputCell(
+      accessor = _.acquireDate.getOrElse(""),
+      updater = itemsVar
+        .updater[String] { (lst, str) =>
+          lst.updated(
+            idx,
+            lst(idx)
+              .copy(acquireDate = str.some)
+          )
+        }
     )
 
     def acquirePriceCell =
       val lastGoodPriceValue: Var[String] = Var("")
       td(
-        children <-- lockSignal.splitBoolean(
+        children <-- inflightSubmitOrResolvedRightSignal.splitBoolean(
           _ => List.empty,
           _ =>
             List(
@@ -302,7 +327,7 @@ object ItemAddBulkView:
               )
             )
         ),
-        text <-- lockStreamWithSignal.map {
+        text <-- lockAndItemSignal.map {
           case (true, item) =>
             List(
               item.acquirePriceCurrency.getOrElse(""),
@@ -312,29 +337,26 @@ object ItemAddBulkView:
         }
       )
 
-    val acquireSourceCell = td(
-      child.maybe <-- lockSignal.splitBoolean(
-        _ => None,
-        _ =>
-          textArea(
-            controlled(
-              value <-- signal.map(_.acquireSource.getOrElse("")),
-              onInput.mapToValue --> itemsVar
-                .updater[String] { (lst, str) =>
-                  lst.updated(
-                    idx,
-                    lst(idx).copy(acquireSource =
-                      if (str.isEmpty()) None else str.some
-                    )
-                  )
-                }
-            )
-          ).some
-      ),
-      text <-- lockStreamWithSignal.map {
-        case (true, item) => item.acquireSource.getOrElse("")
-        case _            => ""
-      }
+    val acquireSourceCell = mkTextAreaCell(
+      accessor = _.acquireSource.getOrElse(""),
+      updater = itemsVar
+        .updater { (lst, str) =>
+          lst.updated(
+            idx,
+            lst(idx).copy(acquireSource = if (str.isEmpty()) None else str.some)
+          )
+        }
+    )
+
+    val detailsCell = mkTextAreaCell(
+      accessor = _.details.getOrElse(""),
+      updater = itemsVar
+        .updater { (lst, str) =>
+          lst.updated(
+            idx,
+            lst(idx).copy(details = if (str.isEmpty()) None else str.some)
+          )
+        }
     )
 
     val removeRowCell = td(
@@ -344,24 +366,28 @@ object ItemAddBulkView:
           lst.zipWithIndex.collect { case (item, i) if i != idx => item }
         },
         "Remove",
-        disabled <-- lockSignal
+        disabled <-- inflightSubmitOrResolvedRightSignal
       )
     )
 
     tr(
       slugCell,
       labelCell,
+      publishDateCell,
       acquireDateCell,
       acquirePriceCell,
       acquireSourceCell,
+      detailsCell,
       removeRowCell
     )
 
   private final case class ItemDtoFlat(
       slug: Option[String] = None,
       label: Option[String] = None,
+      publishDate: Option[String] = None,
       acquireDate: Option[String] = None,
       acquirePriceCurrency: Option[String] = None,
       acquirePriceValue: Option[BigDecimal] = None,
-      acquireSource: Option[String] = None
+      acquireSource: Option[String] = None,
+      details: Option[String] = None
   )
