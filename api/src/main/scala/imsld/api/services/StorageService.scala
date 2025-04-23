@@ -2,22 +2,22 @@ package imsld.api.services
 
 import cats.effect.kernel.{Resource, Sync}
 import cats.syntax.all.*
+import io.circe.generic.auto.*
+import skunk.circe.codec.all.jsonb
 import skunk.codec.all.*
 import skunk.implicits.*
 import skunk.syntax.*
 import skunk.{Codec, Encoder, Query, Session}
-import skunk.circe.codec.all.jsonb
-import io.circe.generic.auto.*
 
 import imsld.model.{
   InsertedRowWithId,
+  ItemPartial,
   PagingRequest,
   Storage,
   StorageNew,
-  StoragePartial
+  StoragePartial,
+  StorageSlim
 }
-import imsld.model.ItemPartial
-import imsld.model.StorageSlim
 
 given PgStatementProvider[Storage, StorageNew, StoragePartial, StorageSlim] =
   StorageService

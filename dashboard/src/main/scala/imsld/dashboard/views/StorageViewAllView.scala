@@ -1,16 +1,14 @@
 package imsld.dashboard.views
 
-import com.raquo.laminar.api.L.*
-import imsld.dashboard.BACKEND_ENDPOINT
-import imsld.model.PagedResponse
-import imsld.model.StoragePartial
-
-import io.circe.parser.decode
 import cats.syntax.all.*
-import io.circe.generic.auto.*
+import com.raquo.laminar.api.L.*
 import com.raquo.laminar.nodes.ReactiveHtmlElement
+import io.circe.generic.auto.*
+import io.circe.parser.decode
 import org.scalajs.dom.HTMLDivElement
-import imsld.model.StorageSlim
+
+import imsld.dashboard.BACKEND_ENDPOINT
+import imsld.model.{PagedResponse, StoragePartial, StorageSlim}
 
 object StorageViewAllView {
   private val storagesVar

@@ -17,11 +17,14 @@ import io.circe.parser.decode
 import io.circe.syntax.*
 import org.scalajs.dom.HTMLDivElement
 
-import imsld.dashboard.LogLevel
-import imsld.dashboard.BACKEND_ENDPOINT
-import imsld.model.{InsertedRowWithId, ItemNew, MonetaryAmount}
-import imsld.model.PagedResponse
-import imsld.model.StorageSlim
+import imsld.dashboard.{BACKEND_ENDPOINT, LogLevel}
+import imsld.model.{
+  InsertedRowWithId,
+  ItemNew,
+  MonetaryAmount,
+  PagedResponse,
+  StorageSlim
+}
 
 object ItemAddBulkView:
   given Encoder[ItemNew] = Encoder.derived

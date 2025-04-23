@@ -12,11 +12,11 @@ import imsld.model.{
   Item,
   ItemNew,
   ItemPartial,
+  ItemSlim,
   MonetaryAmount,
   PagingRequest,
   StorageSlim
 }
-import imsld.model.ItemSlim
 
 given PgStatementProvider[Item, ItemNew, ItemPartial, ItemSlim] = ItemService
 

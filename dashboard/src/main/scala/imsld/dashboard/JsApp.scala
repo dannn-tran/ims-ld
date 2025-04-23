@@ -6,6 +6,7 @@ import org.scalajs.dom
 import imsld.dashboard.pages.{
   HomePage,
   ItemAddBulkPage,
+  ItemByIdPage,
   ItemViewAllPage,
   NotFoundPage
 }
@@ -16,6 +17,7 @@ object JsApp {
     JsRouter.currentPageSignal.splitMatchOne
       .handleValue(HomePage)(HomeView())
       .handleValue(ItemViewAllPage)(ItemViewAllView())
+      .handleType[ItemByIdPage] { (_, signal) => ItemByIdView(signal) }
       .handleValue(ItemAddBulkPage)(ItemAddBulkView())
       .handleValue(NotFoundPage)(NotFoundView())
       .toSignal

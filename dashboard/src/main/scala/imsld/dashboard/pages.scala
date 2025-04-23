@@ -8,6 +8,7 @@ object pages {
   case object HomePage
       extends Page("Inventory Management System with Linked Data")
   case object ItemViewAllPage extends Page("Items - View")
+  case class ItemByIdPage(id: Int) extends Page(s"Item $id")
   case object ItemAddBulkPage extends Page("Items - Bulk Creation")
   case object NotFoundPage extends Page("Not Found")
   case object StorageViewAllPage extends Page("Storages - View")

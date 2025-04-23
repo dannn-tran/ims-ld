@@ -1,9 +1,8 @@
 package imsld.api.routes
 
-import org.http4s.dsl.impl.QueryParamDecoderMatcherWithDefault
-import org.http4s.QueryParamDecoder
 import cats.syntax.all.*
-import org.http4s.ParseFailure
+import org.http4s.dsl.impl.QueryParamDecoderMatcherWithDefault
+import org.http4s.{ParseFailure, QueryParamDecoder}
 
 object common:
   val DEFAULT_OFFSET = 0
