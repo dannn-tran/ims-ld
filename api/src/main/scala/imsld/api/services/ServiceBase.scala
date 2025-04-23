@@ -11,9 +11,9 @@ import imsld.model.{
   PagingResponse
 }
 
-abstract class ServiceBase[F[_]: Sync, T, TNew, TPartial](
+abstract class ServiceBase[F[_]: Sync, T, TNew, TPartial, TSlim](
     pgSessionPool: Resource[F, Session[F]]
-)(implicit companion: PgStatementProvider[T, TNew, TPartial]):
+)(implicit companion: PgStatementProvider[T, TNew, TPartial, TSlim]):
   def insertMany(objs: List[TNew]): F[List[InsertedRowWithId]] =
     pgSessionPool.use { session =>
       for
@@ -24,11 +24,11 @@ abstract class ServiceBase[F[_]: Sync, T, TNew, TPartial](
       yield ids
     }
 
-  def getAll(pagingRequest: PagingRequest): F[PagedResponse[TPartial]] =
+  def getAllPartial(pagingRequest: PagingRequest): F[PagedResponse[TPartial]] =
     for
       data <- pgSessionPool.use { session =>
         for
-          dataQuery <- session.prepare(companion.getAllQuery)
+          dataQuery <- session.prepare(companion.getAllPartialQuery)
           data <- dataQuery.stream(pagingRequest, 64).compile.toList
         yield data
       }
@@ -36,9 +36,27 @@ abstract class ServiceBase[F[_]: Sync, T, TNew, TPartial](
     yield PagedResponse(
       data = data,
       paging = PagingResponse(
-        pageNumber = pagingRequest.pageNumber,
-        pageSize = pagingRequest.pageSize,
-        totalPages = Math.ceilDiv(count, pagingRequest.pageSize)
+        offset = pagingRequest.offset,
+        limit = pagingRequest.limit,
+        total = count
+      )
+    )
+
+  def getAllSlim(pagingRequest: PagingRequest): F[PagedResponse[TSlim]] =
+    for
+      data <- pgSessionPool.use { session =>
+        for
+          dataQuery <- session.prepare(companion.getAllSlimQuery)
+          data <- dataQuery.stream(pagingRequest, 64).compile.toList
+        yield data
+      }
+      count <- pgSessionPool.use(_.unique(companion.countQuery))
+    yield PagedResponse(
+      data = data,
+      paging = PagingResponse(
+        offset = pagingRequest.offset,
+        limit = pagingRequest.limit,
+        total = count
       )
     )
 
@@ -50,8 +68,9 @@ abstract class ServiceBase[F[_]: Sync, T, TNew, TPartial](
       yield obj
     }
 
-trait PgStatementProvider[T, TNew, TPartial]:
+trait PgStatementProvider[T, TNew, TPartial, TSlim]:
   def insertManyQuery(n: Int): Query[List[TNew], InsertedRowWithId]
-  def getAllQuery: Query[PagingRequest, TPartial]
+  def getAllPartialQuery: Query[PagingRequest, TPartial]
+  def getAllSlimQuery: Query[PagingRequest, TSlim]
   def getOneByIdQuery: Query[Int, T]
   def countQuery: Query[skunk.Void, Int]

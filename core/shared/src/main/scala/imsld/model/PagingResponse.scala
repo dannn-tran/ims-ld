@@ -1,7 +1,7 @@
 package imsld.model
 
 final case class PagingResponse(
-    pageNumber: Int,
-    pageSize: Int,
-    totalPages: Int
+    offset: Int,
+    limit: Int,
+    total: Int
 )

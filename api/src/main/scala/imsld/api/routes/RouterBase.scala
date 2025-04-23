@@ -18,11 +18,16 @@ abstract class RouterBase[
     T,
     TNew,
     TPartial,
-    Service <: ServiceBase[F, T, TNew, TPartial]
+    TSlim,
+    Service <: ServiceBase[F, T, TNew, TPartial, TSlim]
 ](
     service: Service
-)(using circe.Encoder[T], circe.Decoder[TNew], circe.Encoder[TPartial])
-    extends Http4sDsl[F] {
+)(using
+    circe.Encoder[T],
+    circe.Decoder[TNew],
+    circe.Encoder[TPartial],
+    circe.Encoder[TSlim]
+) extends Http4sDsl[F] {
   def routes: HttpRoutes[F] =
     HttpRoutes.of[F](customRouteHandler `orElse` defaultRouteHandler)
 
@@ -30,15 +35,22 @@ abstract class RouterBase[
     PartialFunction.empty
 
   val defaultRouteHandler: PartialFunction[Request[F], F[Response[F]]] = {
-    case GET -> Root :? PageNumberQueryParamMatcher(
-          pageNum
-        ) +& PageSizeQueryParamMatcher(pageSize) =>
-      for {
-        data <- service.getAll(
-          PagingRequest(pageNum, pageSize)
-        )
-        resp <- Ok(data)
-      } yield resp
+    case GET -> Root
+        :? DetailLevelQueryParamMatcher(detailLevel)
+        +& OffsetQueryParamMatcher(offset)
+        +& LimitQueryParamMatcher(limit) =>
+      val pagingReq = PagingRequest(offset, limit)
+      detailLevel match
+        case DetailLevel.Partial =>
+          for
+            data <- service.getAllPartial(pagingReq)
+            resp <- Ok(data)
+          yield resp
+        case DetailLevel.Slim =>
+          for
+            data <- service.getAllSlim(pagingReq)
+            resp <- Ok(data)
+          yield resp
 
     case GET -> Root / IntVar(id) =>
       for {

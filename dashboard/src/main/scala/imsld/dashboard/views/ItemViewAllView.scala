@@ -16,7 +16,10 @@ object ItemViewAllView:
     "id",
     "slug",
     "label",
-    "acquire date"
+    "acquire date",
+    "acquire price",
+    "details",
+    "storage"
   )
 
   private val itemsVar
@@ -29,7 +32,7 @@ object ItemViewAllView:
     div(
       h1("All Items"),
       FetchStream
-        .get(s"$BACKEND_ENDPOINT/items")
+        .get(s"$BACKEND_ENDPOINT/items?detail=partial")
         .recoverToEither
         .map(
           _.fold(err => Left(err), decode[PagedResponse[ItemPartial]])
@@ -48,12 +51,18 @@ object ItemViewAllView:
         } { (_, signal) =>
           div(
             div(
-              div(
-                children <-- signal.map(_.paging.totalPages).map { n =>
-                  (1 until (n + 1)).map { i => button(typ := "button", n) }
+              children <-- signal.map { resp =>
+                val pageCount = ceilDiv(resp.paging.total, resp.paging.limit)
+                val curPage = resp.paging.offset / resp.paging.limit + 1
+                (1 until (pageCount + 1)).map { i =>
+                  button(
+                    typ := "button",
+                    i,
+                    cls("btn-pg"),
+                    cls("btn-pg-cur") := i == curPage
+                  )
                 }
-              ),
-              button(typ := "button", "New")
+              }
             ),
             table(
               thead(
@@ -63,14 +72,7 @@ object ItemViewAllView:
               ),
               tbody(
                 children <-- signal.map(_.data).map { items =>
-                  items.map { item =>
-                    tr(
-                      td(item.id),
-                      td(item.slug),
-                      td(item.label),
-                      td(item.acquireDate.map(_.toString()))
-                    )
-                  }
+                  items.map(renderRow)
                 }
               )
             )
@@ -78,3 +80,16 @@ object ItemViewAllView:
         }
         .toSignal
     )
+  private def renderRow(item: ItemPartial) = tr(
+    td(item.id),
+    td(item.slug),
+    td(item.label),
+    td(item.acquireDate.map(_.toString())),
+    td(item.acquirePrice.map { p =>
+      s"${p.value} ${p.currency}"
+    }),
+    td(item.details),
+    td(item.storage.map(_.label))
+  )
+
+  private def ceilDiv(a: Int, b: Int): Int = a / b + (if (a % b == 0) 0 else 1)

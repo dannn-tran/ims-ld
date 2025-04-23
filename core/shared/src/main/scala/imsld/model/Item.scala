@@ -7,7 +7,7 @@ final case class Item(
     acquireDate: Option[String],
     acquirePrice: Option[MonetaryAmount],
     acquireSource: Option[String],
-    storage: Option[StoragePartial],
+    storage: Option[StorageSlim],
     details: Option[String],
     linkedEntities: List[(ItemEntityRelType, EntityPartial)],
     tags: List[Tag]
@@ -17,7 +17,17 @@ final case class ItemPartial(
     id: Int,
     slug: Option[String],
     label: Option[String],
-    acquireDate: Option[String]
+    acquireDate: Option[String],
+    acquirePrice: Option[MonetaryAmount],
+    acquireSource: Option[String],
+    storage: Option[StorageSlim],
+    details: Option[String]
+) extends WithId
+
+final case class ItemSlim(
+    id: Int,
+    slug: Option[String],
+    label: Option[String]
 ) extends WithId
 
 final case class ItemNew(

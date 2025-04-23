@@ -14,16 +14,18 @@ import imsld.model.{
   ItemPartial,
   MonetaryAmount,
   PagingRequest,
-  StoragePartial
+  StorageSlim
 }
+import imsld.model.ItemSlim
 
-given PgStatementProvider[Item, ItemNew, ItemPartial] = ItemService
+given PgStatementProvider[Item, ItemNew, ItemPartial, ItemSlim] = ItemService
 
 final case class ItemService[F[_]: Sync](
     pgSessionPool: Resource[F, Session[F]]
-) extends ServiceBase[F, Item, ItemNew, ItemPartial](pgSessionPool)
+) extends ServiceBase[F, Item, ItemNew, ItemPartial, ItemSlim](pgSessionPool)
 
-object ItemService extends PgStatementProvider[Item, ItemNew, ItemPartial]:
+object ItemService
+    extends PgStatementProvider[Item, ItemNew, ItemPartial, ItemSlim]:
   val monetary_amount: Codec[MonetaryAmount] = CompositeTypeCodec
     .mkComposite(
       varchar(3) *: numeric(9, 2),
@@ -67,11 +69,13 @@ object ItemService extends PgStatementProvider[Item, ItemNew, ItemPartial]:
       SELECT COUNT(*) FROM items
     """.query(int8).map(_.toInt)
 
-  val getAllQuery: Query[PagingRequest, ItemPartial] =
+  val getAllPartialQuery: Query[PagingRequest, ItemPartial] =
     sql"""
-      SELECT id, slug, label, acquire_date
-      FROM items
-      ORDER BY id
+      SELECT i.id, i.slug, i.label, i.acquire_date, i.acquire_price, i.acquire_source, s.id, s.slug, s.label, i.details
+      FROM items i
+      LEFT JOIN storages s
+      ON i.storage_id = s.id
+      ORDER BY i.id
       OFFSET $int4
       LIMIT $int4
     """
@@ -80,9 +84,52 @@ object ItemService extends PgStatementProvider[Item, ItemNew, ItemPartial]:
           *: varchar(64).opt
           *: text.opt
           *: varchar(10).opt
+          *: monetary_amount.opt
+          *: text.opt
+          *: int4.opt
+          *: varchar(64).opt
+          *: text.opt
+          *: text.opt
       )
-      .to[ItemPartial]
-      .contramap(p => (p.pageSize * (p.pageNumber - 1), p.pageSize))
+      .map {
+        (
+            id,
+            slug,
+            label,
+            acquireDate,
+            acquirePrice,
+            acquireSource,
+            storageId,
+            storageSlug,
+            storageLabel,
+            details
+        ) =>
+          ItemPartial(
+            id,
+            slug,
+            label,
+            acquireDate,
+            acquirePrice,
+            acquireSource,
+            storageId.map { id => StorageSlim(id, storageSlug, storageLabel) },
+            details
+          )
+      }
+      .contramap { p => (p.offset, p.limit) }
+
+  val getAllSlimQuery: Query[PagingRequest, ItemSlim] =
+    sql"""
+      SELECT id, slug, label
+      FROM items
+      ORDER BY id
+      OFFSET $int4
+      LIMIT $int4
+    """
+      .query(int4 *: varchar(64).opt *: text.opt)
+      .to[ItemSlim]
+      .contramap { p =>
+        (p.offset, p.limit)
+      }
 
   val getOneByIdQuery: Query[Int, Item] =
     sql"""
@@ -125,7 +172,7 @@ object ItemService extends PgStatementProvider[Item, ItemNew, ItemPartial]:
             acquirePrice,
             acquireSource,
             storageId.map { id =>
-              StoragePartial(id, storageSlug, storageLabel)
+              StorageSlim(id, storageSlug, storageLabel)
             },
             details,
             List.empty,

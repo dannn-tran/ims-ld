@@ -16,20 +16,9 @@ body {
 
 #app {
   width: 100%;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 5fr;
   gap: 12px;
-}
-
-@media (min-width: 1024px) { 
-  #app {
-    width: 75%;
-  }
-}
-
-@media (min-width: 1280px) { 
-  #app {
-    width: 60%;
-  }
 }
 
 .navbar-navgroup-items {
@@ -47,4 +36,10 @@ body {
 
 .error {
   color: red;
+}
+
+.input-form {
+  overflow-y: auto;
+  max-width: 83.33vw;
+  padding-bottom: 8px;
 }

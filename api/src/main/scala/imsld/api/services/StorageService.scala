@@ -6,6 +6,8 @@ import skunk.codec.all.*
 import skunk.implicits.*
 import skunk.syntax.*
 import skunk.{Codec, Encoder, Query, Session}
+import skunk.circe.codec.all.jsonb
+import io.circe.generic.auto.*
 
 import imsld.model.{
   InsertedRowWithId,
@@ -14,15 +16,25 @@ import imsld.model.{
   StorageNew,
   StoragePartial
 }
+import imsld.model.ItemPartial
+import imsld.model.StorageSlim
 
-given PgStatementProvider[Storage, StorageNew, StoragePartial] = StorageService
+given PgStatementProvider[Storage, StorageNew, StoragePartial, StorageSlim] =
+  StorageService
 
 final case class StorageService[F[_]: Sync](
     pgSessionPool: Resource[F, Session[F]]
-) extends ServiceBase[F, Storage, StorageNew, StoragePartial](pgSessionPool)
+) extends ServiceBase[F, Storage, StorageNew, StoragePartial, StorageSlim](
+      pgSessionPool
+    )
 
 object StorageService
-    extends PgStatementProvider[Storage, StorageNew, StoragePartial]:
+    extends PgStatementProvider[
+      Storage,
+      StorageNew,
+      StoragePartial,
+      StorageSlim
+    ]:
   val storageNewEnc: Encoder[StorageNew] =
     (varchar(64).opt *: text.opt *: text.opt)
       .contramap { obj =>
@@ -47,38 +59,74 @@ object StorageService
       SELECT COUNT(*) FROM storages
     """.query(int8).map(_.toInt)
 
-  val getAllQuery: Query[PagingRequest, StoragePartial] =
+  val getAllPartialQuery: Query[PagingRequest, StoragePartial] =
     sql"""
-      SELECT id, slug, label
-      FROM storages
-      ORDER BY id
+      SELECT s.id, s.slug, s.label, s.description, COUNT(i.id)
+      FROM storages s
+      LEFT JOIN items i
+      ON s.id = i.storage_id
+      GROUP BY s.id, s.slug, s.label, s.description
+      ORDER BY s.id
       OFFSET $int4
       LIMIT $int4
     """
       .query(
-        int4 *: varchar(
-          64
-        ).opt *: text.opt
+        int4
+          *: varchar(64).opt
+          *: text.opt
+          *: text.opt
+          *: int8
       )
       .to[StoragePartial]
-      .contramap(p => (p.pageSize * (p.pageNumber - 1), p.pageSize))
+      .contramap { p => (p.offset, p.limit) }
+
+  val getAllSlimQuery: Query[PagingRequest, StorageSlim] =
+    sql"""
+      SELECT id, slug, label
+      FROM storages
+      OFFSET $int4
+      LIMIT $int4
+    """
+      .query(int4 *: varchar(64).opt *: text.opt)
+      .to[StorageSlim]
+      .contramap { p => (p.offset, p.limit) }
 
   val getOneByIdQuery: Query[Int, Storage] =
     sql"""
-      SELECT id, slug, label, description
-      FROM storages
+      SELECT 
+        s.id,
+        s.slug, 
+        s.label, 
+        s.description, 
+        COALESCE(
+          JSONB_AGG(
+            JSONB_BUILD_OBJECT(
+              'id': i.id,
+              'slug': i.slug,
+              'label': i.label,
+              'acquireDate': i.acquire_date
+            )
+          ) FILTER (WHERE i.id IS NOT NULL),
+          '[]'
+        )
+      FROM storages s
+      LEFT JOIN items i
+      ON s.id = i.storage_id
       WHERE id = $int4
     """
       .query(
-        int4 *: varchar(
-          64
-        ).opt *: text.opt *: text.opt
+        int4
+          *: varchar(64).opt
+          *: text.opt
+          *: text.opt
+          *: jsonb[List[ItemPartial]]
       )
-      .map { case (id, slug, label, desc) =>
+      .map { case (id, slug, label, desc, items) =>
         Storage(
           id,
           slug,
           label,
-          desc
+          desc,
+          items
         )
       }

@@ -1,18 +1,44 @@
 package imsld.api.routes
 
 import org.http4s.dsl.impl.QueryParamDecoderMatcherWithDefault
+import org.http4s.QueryParamDecoder
+import cats.syntax.all.*
+import org.http4s.ParseFailure
 
 object common:
-  val DEFAULT_PAGE_NUMBER = 1 // first apge
-  val DEFAULT_PAGE_SIZE = 50
+  val DEFAULT_OFFSET = 0
+  val DEFAULT_LIMIT = 50
 
-  object PageNumberQueryParamMatcher
+  object OffsetQueryParamMatcher
       extends QueryParamDecoderMatcherWithDefault[Int](
-        "page-num",
-        DEFAULT_PAGE_NUMBER
+        "offset",
+        DEFAULT_OFFSET
       )
-  object PageSizeQueryParamMatcher
+  object LimitQueryParamMatcher
       extends QueryParamDecoderMatcherWithDefault[Int](
-        "page-size",
-        DEFAULT_PAGE_SIZE
+        "limit",
+        DEFAULT_LIMIT
+      )
+
+  enum DetailLevel(val value: String):
+    case Partial extends DetailLevel("partial")
+    case Slim extends DetailLevel("slim")
+  object DetailLevel:
+    private lazy val _fromString: Map[String, DetailLevel] =
+      DetailLevel.values.map { x =>
+        (x.value, x)
+      }.toMap
+    def fromString(str: String): Either[String, DetailLevel] = _fromString
+      .get(str)
+      .toRight(
+        s"$str is an invalid DetailLevel; valid values are ${DetailLevel.values.map(_.value).mkString(", ")}"
+      )
+  given QueryParamDecoder[DetailLevel] =
+    QueryParamDecoder[String].emap { s =>
+      DetailLevel.fromString(s.toLowerCase()).leftMap(ParseFailure(_, s))
+    }
+  object DetailLevelQueryParamMatcher
+      extends QueryParamDecoderMatcherWithDefault[DetailLevel](
+        "detail",
+        DetailLevel.Slim
       )

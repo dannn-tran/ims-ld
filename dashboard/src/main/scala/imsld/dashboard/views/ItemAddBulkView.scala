@@ -17,14 +17,40 @@ import io.circe.parser.decode
 import io.circe.syntax.*
 import org.scalajs.dom.HTMLDivElement
 
+import imsld.dashboard.LogLevel
 import imsld.dashboard.BACKEND_ENDPOINT
 import imsld.model.{InsertedRowWithId, ItemNew, MonetaryAmount}
+import imsld.model.PagedResponse
+import imsld.model.StorageSlim
 
 object ItemAddBulkView:
   given Encoder[ItemNew] = Encoder.derived
 
+  private val COLUMN_HEADERS: List[String] = List(
+    "slug",
+    "label",
+    "publish date",
+    "acquire date",
+    "acquire price",
+    "acquire source",
+    "details",
+    "storage",
+    ""
+  )
+
   private val itemsVar: Var[List[ItemDtoFlat]] = Var(List(ItemDtoFlat()))
-  private val localErrVar: Var[Option[String]] = Var(None)
+  private val storagesFetchStream
+      : EventStream[Either[Throwable, PagedResponse[StorageSlim]]] =
+    FetchStream
+      .get(s"$BACKEND_ENDPOINT/storages")
+      .recoverToEither
+      .map(
+        _.fold(
+          err => Left(err),
+          decode[PagedResponse[StorageSlim]]
+        )
+      )
+  private val storagesVar: Var[List[StorageSlim]] = Var(List.empty)
 
   private val submitBus: EventBus[ValidatedNec[String, List[ItemNew]]] =
     new EventBus
@@ -57,13 +83,27 @@ object ItemAddBulkView:
       case _                        => false
     }
     .startWith(false)
+  private val logVar: Var[Option[(LogLevel, String)]] = Var(None)
 
   def apply(): ReactiveHtmlElement[HTMLDivElement] =
     div(
       h1("Bulk item creation"),
+      storagesFetchStream.collect { case Right(resp) =>
+        resp.data
+      } --> storagesVar.writer,
+      storagesFetchStream.collect {
+        case Right(_)  => None
+        case Left(err) => (LogLevel.Error, err.toString()).some
+      } --> logVar.writer,
       controlPanel,
-      child.maybe <-- localErrVar.signal.splitOption { (_, signal) =>
-        div(text <-- signal, cls := "error")
+      child.maybe <-- logVar.signal.splitOption { (_, signal) =>
+        div(
+          text <-- signal.map { (_, str) => str },
+          cls("error") <-- signal.map {
+            case (LogLevel.Error, _) => true
+            case _                   => false
+          }
+        )
       },
       inputForm
     )
@@ -82,41 +122,38 @@ object ItemAddBulkView:
         typ := "submit",
         "Submit",
         onClick.preventDefault.mapTo(getDto) --> submitBus.writer,
-        submitBus.events.collect { case Invalid(err) =>
-          err
-        } --> localErrVar.writer.contramap[NonEmptyChain[String]](
-          _.toList.mkString("\n").some
-        ),
+        submitBus.events.collect {
+          case Invalid(err) =>
+            (LogLevel.Error, err.toList.mkString("\n")).some
+          case Valid(_) => None
+        } --> logVar.writer,
         disabled <-- inflightSubmitOrResolvedRightSignal
       ),
+      respStream.collect {
+        case Pending(_) => (LogLevel.Info, "Submitting...")
+        case Resolved(_, Right(resp), _) =>
+          (
+            LogLevel.Info,
+            "New items successfully created. IDs: " + resp
+              .map(_.id)
+              .mkString(", ")
+          )
+        case Resolved(_, Left(err), _) =>
+          (
+            LogLevel.Error,
+            "Failed to create new items. Error: " + err.toString()
+          )
+      } --> logVar.writer.contramap[(LogLevel, String)](_.some),
       button(
         typ := "button",
         "Clear",
         onClick.mapTo(List.empty) --> itemsVar.writer,
         disabled <-- inflightSubmitSignal
-      ),
-      div(
-        text <-- respStream.splitStatus(
-          (resolve, _) =>
-            resolve.output.fold(
-              err => "Failed to create new items. Error: " + err.toString(),
-              succ =>
-                "New items successfully created. IDs: " + succ
-                  .map(_.id)
-                  .mkString(", ")
-            ),
-          (_, _) => "Submitting..."
-        ),
-        cls("error") <-- respStream.map {
-          case Resolved(_, Left(_), _) => true
-          case _                       => false
-        }
       )
     )
 
   private def getDto: ValidatedNec[String, List[ItemNew]] =
     itemsVar.now().traverse(validate)
-
   private def validate(item: ItemDtoFlat): ValidatedNec[String, ItemNew] =
     for
       acquirePrice <- (item.acquirePriceCurrency, item.acquirePriceValue) match
@@ -128,40 +165,30 @@ object ItemAddBulkView:
               s"Currency of acquisition price must be present when value is present for $item"
             )
           )
-      slug = item.slug.map(_.trim()).flatMap { s =>
-        if (s.isEmpty()) None else s.some
-      }
-      label = item.label.map(_.trim()).flatMap { s =>
-        if (s.isEmpty()) None else s.some
-      }
-      acquireSource = item.acquireSource.map(_.trim()).flatMap { s =>
-        if (s.isEmpty()) None else s.some
-      }
+      slug = item.slug.flatMap(sanitiseText)
+      label = item.label.flatMap(sanitiseText)
+      acquireSource = item.acquireSource.flatMap(sanitiseText)
+      details = item.details.flatMap(sanitiseText)
     yield ItemNew(
       slug,
       label,
       item.acquireDate,
       acquirePrice,
       acquireSource,
-      None,
-      None
+      item.storageId,
+      details
     )
+  private def sanitiseText(str: String): Option[String] =
+    val trimmed = str.trim()
+    if (trimmed.isEmpty()) None else trimmed.some
 
   private val inputForm =
     form(
+      cls := "input-form",
       table(
         thead(
           tr(
-            List(
-              "slug",
-              "label",
-              "publish date",
-              "acquire date",
-              "acquire price",
-              "acquire source",
-              "details",
-              ""
-            ).map { h => th(h) }
+            COLUMN_HEADERS.map { h => th(h) }
           )
         ),
         tbody(
@@ -295,7 +322,7 @@ object ItemAddBulkView:
               ),
               dataList(
                 idAttr := "defaultCurrencies",
-                List("SGD", "USD", "EUR", "VND").map { ccy =>
+                List("SGD", "MYR", "USD", "EUR", "VND").map { ccy =>
                   option(value := ccy)
                 }
               ),
@@ -359,6 +386,50 @@ object ItemAddBulkView:
         }
     )
 
+    val storageIdInputBus: EventBus[Either[String, Option[Int]]] = new EventBus
+    val storageCell = td(
+      text <-- lockAndItemSignal.withCurrentValueOf(storagesVar).map {
+        case (true, item, storages) =>
+          item.storageId
+            .flatMap { id => storages.find(_.id == id) }
+            .flatMap(_.label)
+            .getOrElse("")
+        case _ => ""
+      },
+      child.maybe <-- inflightSubmitOrResolvedRightSignal.splitBoolean(
+        _ => None,
+        _ =>
+          select(
+            option(value := "", "Choose storage location..."),
+            children <-- storagesVar.signal.map { lst =>
+              lst.map { s => option(value := s.id.toString(), s.label) }
+            },
+            value <-- signal.map(_.storageId.fold("")(_.toString())),
+            onInput.mapToValue.map[Either[String, Option[Int]]] { x =>
+              if (x.isEmpty()) Right(None)
+              else
+                x.toIntOption match
+                  case None        => Left("Invalid storage_id: " + x)
+                  case Some(value) => Right(value.some)
+            } --> storageIdInputBus.writer,
+            storageIdInputBus.events.collect {
+              case Right(value) => value
+              case Left(_)      => None
+            } --> itemsVar.updater[Option[Int]] { (lst, storageId) =>
+              lst.updated(idx, lst(idx).copy(storageId = storageId))
+            },
+            storageIdInputBus.events.collect { case Left(err) =>
+              err
+            } --> logVar.writer.contramap { err =>
+              (
+                LogLevel.Error,
+                s"Error encountered while updating storage_id for row $idx: $err"
+              ).some
+            }
+          ).some
+      )
+    )
+
     val removeRowCell = td(
       button(
         typ := "button",
@@ -378,6 +449,7 @@ object ItemAddBulkView:
       acquirePriceCell,
       acquireSourceCell,
       detailsCell,
+      storageCell,
       removeRowCell
     )
 
@@ -389,5 +461,6 @@ object ItemAddBulkView:
       acquirePriceCurrency: Option[String] = None,
       acquirePriceValue: Option[BigDecimal] = None,
       acquireSource: Option[String] = None,
-      details: Option[String] = None
+      details: Option[String] = None,
+      storageId: Option[Int] = None
   )

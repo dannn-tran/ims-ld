@@ -4,7 +4,8 @@ final case class Storage(
     id: Int,
     slug: Option[String],
     label: Option[String],
-    description: Option[String]
+    description: Option[String],
+    items: List[ItemPartial]
 ) extends WithId
 
 final case class StorageNew(
@@ -16,5 +17,13 @@ final case class StorageNew(
 final case class StoragePartial(
     id: Int,
     slug: Option[String],
-    label: Option[String]
+    label: Option[String],
+    description: Option[String],
+    itemCount: Long
 ) extends WithId
+
+final case class StorageSlim(
+    id: Int,
+    slug: Option[String],
+    label: Option[String]
+)
