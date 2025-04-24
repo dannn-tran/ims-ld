@@ -3,6 +3,8 @@ package imsld.dashboard
 import com.raquo.airstream.core.EventStream
 import org.scalajs.dom
 
+import imsld.dashboard.implicits.HeadersImplicit
+
 abstract class HttpResponse(val statusCode: Int)
 
 object HttpResponse:
@@ -26,19 +28,33 @@ object HttpResponse:
   type ServerError = InternalServerError.type | NotImplemented.type |
     BadGateway.type | ServiceUnavailable.type | GatewayTimeout.type
 
-  final case class UnexpectedResponse(resp: dom.Response)
-      extends HttpResponse(0)
+  final case class UnexpectedResponse(
+      headers: Map[String, List[String]],
+      override val statusCode: Int,
+      body: String
+  ) extends HttpResponse(statusCode)
 
   val handleServerErrorResponse: PartialFunction[dom.Response, EventStream[
     ServerError | UnexpectedResponse
   ]] = {
     case resp if resp.status >= 500 =>
-      val err: ServerError | UnexpectedResponse = resp.status match
+      val or: ServerError | EventStream[UnexpectedResponse] = resp.status match
         case 500 => InternalServerError
         case 501 => NotImplemented
         case 502 => BadGateway
         case 503 => ServiceUnavailable
         case 504 => GatewayTimeout
-        case _   => UnexpectedResponse(resp)
-      EventStream.fromValue(err)
+        case _ =>
+          EventStream
+            .fromJsPromise(resp.text())
+            .map(
+              UnexpectedResponse(
+                resp.headers.toMap,
+                resp.status,
+                _
+              )
+            )
+      or match
+        case err: ServerError                    => EventStream.fromValue(err)
+        case es: EventStream[UnexpectedResponse] => es
   }

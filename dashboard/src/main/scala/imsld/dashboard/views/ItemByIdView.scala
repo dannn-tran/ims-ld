@@ -8,6 +8,7 @@ import io.circe.parser.decode
 import org.scalajs.dom.HTMLDivElement
 
 import imsld.dashboard.HttpResponse.{ServerError, UnexpectedResponse}
+import imsld.dashboard.implicits.HeadersImplicit
 import imsld.dashboard.pages.ItemByIdPage
 import imsld.dashboard.{BACKEND_ENDPOINT, HttpResponse}
 import imsld.model.Item
@@ -27,11 +28,18 @@ object ItemByIdView {
             .fromJsPromise(resp.text())
             .map[ResponseT](decode[Item] `andThen` HttpResponse.Ok.apply)
         case resp =>
-          EventStream.fromValue[ResponseT](
-            HttpResponse.UnexpectedResponse(resp)
-          )
+          EventStream
+            .fromJsPromise(resp.text())
+            .map { body =>
+              HttpResponse
+                .UnexpectedResponse(
+                  resp.headers.toMap,
+                  resp.status,
+                  body
+                )
+            }
       })
-      .get(s"$BACKEND_ENDPOINT/$id")
+      .get(s"$BACKEND_ENDPOINT/items/$id")
       .recoverToEither
 
   def apply(pageS: Signal[ItemByIdPage]): ReactiveHtmlElement[HTMLDivElement] =
@@ -53,7 +61,7 @@ object ItemByIdView {
         case Right(resp: ServerError) =>
           s"Server error (${resp.statusCode})".some
         case Right(resp: UnexpectedResponse) =>
-          s"Unexpected response: $resp".some
+          s"Unexpected response: ${resp.body}".some
         case Left(err) => s"Error: $err".some
       }
       .startWith(None)
@@ -66,15 +74,19 @@ object ItemByIdView {
       child.maybe <-- errS.splitOption { (_, signal) =>
         p(text <-- signal, cls := "error")
       },
-      children <-- itemS.splitOption(
-        (_, signal) =>
+      children <-- itemS.map {
+        case Some(item) =>
           List(
-            p(text <-- signal.map { item => s"ID: ${item.id}" }),
-            p(text <-- signal.map { item =>
-              s"Slug: ${item.slug.getOrElse("")}"
-            })
-          ),
-        List.empty
-      )
+            p(s"ID: ${item.id}"),
+            p(s"Slug: ${item.slug.getOrElse("")}"),
+            p(s"Acquire date : ${item.acquireDate.getOrElse("")}"),
+            p(s"Acquire price: ${item.acquirePrice
+                .fold("") { p => s"${p.value} ${p.currency}" }}"),
+            p(s"Acquire source: ${item.acquireSource.getOrElse("")}"),
+            p(s"Details: ${item.details.getOrElse("")}"),
+            p(s"Storage: ${item.storage.flatMap(_.label)}")
+          )
+        case None => List.empty
+      }
     )
 }
