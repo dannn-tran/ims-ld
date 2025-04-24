@@ -1,19 +1,18 @@
 package imsld.dashboard.views
 import cats.syntax.all.*
 import com.raquo.airstream.core.Signal
+import com.raquo.airstream.status.Resolved
 import com.raquo.laminar.api.L.*
 import com.raquo.laminar.nodes.ReactiveHtmlElement
 import io.circe.generic.auto.*
 import io.circe.parser.decode
-import org.scalajs.dom.HTMLDivElement
+import org.scalajs.dom.{HTMLDivElement, HTMLElement}
 
 import imsld.dashboard.HttpResponse.{ServerError, UnexpectedResponse}
 import imsld.dashboard.implicits.HeadersImplicit
 import imsld.dashboard.pages.ItemByIdPage
 import imsld.dashboard.{BACKEND_ENDPOINT, HttpResponse}
 import imsld.model.Item
-import org.scalajs.dom.HTMLElement
-import com.raquo.airstream.status.Resolved
 
 object ItemByIdView {
   private type ResponseT = HttpResponse.Ok[Throwable, Item] |
@@ -28,10 +27,10 @@ object ItemByIdView {
     val fetchItemS: Signal[Status[ItemByIdPage, Either[Throwable, ResponseT]]] =
       pageS.flatMapWithStatus { p => fetchItem(p.id) }
 
-    val fetchItemPendingS: Signal[Option[String]] = fetchItemS.map {
-      case Pending(_) => "Fetching data...".some
-      case _          => None
-    }
+    val fetchItemPendingS: Signal[Option[String]] = fetchItemS.splitStatus(
+      (_, _) => None,
+      (_, _) => "Fetching data...".some
+    )
 
     val fetchItemSuccessS: Signal[Option[Item]] = fetchItemS
       .map {
@@ -71,6 +70,9 @@ object ItemByIdView {
       },
       fetchItemErrorS --> errorV.writer,
       fetchItemSuccessS --> fetchedItemV.writer,
+      child.maybe <-- errorV.splitOption { (_, signal) =>
+        p(text <-- signal, cls := "error")
+      },
       div(
         button(
           typ := "button",
@@ -96,32 +98,20 @@ object ItemByIdView {
           (Option[Item], Option[Item]),
           Item,
           List[ReactiveHtmlElement[HTMLElement]]
-        ] { case (Some(item), None) => item } { (_, signal) =>
+        ] { case (Some(item), None) => item } { (item, _) =>
           List(
-            p(text <-- signal.map { item =>
-              s"Slug: ${item.slug.getOrElse("")}"
-            }),
-            p(text <-- signal.map { item =>
-              s"Acquire date : ${item.acquireDate.getOrElse("")}"
-            }),
-            p(text <-- signal.map { item =>
-              s"Acquire price: ${item.acquirePrice
-                  .fold("") { p => s"${p.value} ${p.currency}" }}"
-            }),
-            p(text <-- signal.map { item =>
-              s"Acquire source: ${item.acquireSource.getOrElse("")}"
-            }),
-            p(text <-- signal.map { item =>
-              s"Details: ${item.details.getOrElse("")}"
-            }),
-            p(text <-- signal.map { item =>
-              s"Storage: ${item.storage.flatMap(_.label)}"
-            })
+            p(s"Slug: ${item.slug.getOrElse("")}"),
+            p(s"Acquire date : ${item.acquireDate.getOrElse("")}"),
+            p(s"Acquire price: ${item.acquirePrice
+                .fold("") { p => s"${p.value} ${p.currency}" }}"),
+            p(s"Acquire source: ${item.acquireSource.getOrElse("")}"),
+            p(s"Details: ${item.details.getOrElse("")}"),
+            p(s"Storage: ${item.storage.flatMap(_.label)}")
           )
         }
         .handleCase[(Option[Item], Option[Item]), Item, List[
           ReactiveHtmlElement[HTMLElement]
-        ]] { case (_, Some(item)) => item } { (item, signal) =>
+        ]] { case (_, Some(item)) => item } { (_, signal) =>
           val editSlugDiv = div(
             label(forId := "slug-input", "Slug"),
             input(
