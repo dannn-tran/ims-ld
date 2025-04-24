@@ -262,10 +262,7 @@ object ItemAddBulkView:
         lst.updated(
           idx,
           lst(idx)
-            .copy(label =
-              if (processedStr.isEmpty()) None
-              else processedStr.some
-            )
+            .copy(label = processedStr.some)
         )
       }
     )

@@ -12,12 +12,150 @@ import imsld.dashboard.implicits.HeadersImplicit
 import imsld.dashboard.pages.ItemByIdPage
 import imsld.dashboard.{BACKEND_ENDPOINT, HttpResponse}
 import imsld.model.Item
+import org.scalajs.dom.HTMLElement
+import com.raquo.airstream.status.Resolved
 
 object ItemByIdView {
   private type ResponseT = HttpResponse.Ok[Throwable, Item] |
     HttpResponse.NotFound.type | HttpResponse.ServerError |
     HttpResponse.UnexpectedResponse
 
+  private val fetchedItemV: Var[Option[Item]] = Var(None)
+  private val editedItemV: Var[Option[Item]] = Var(None)
+  private val errorV: Var[Option[String]] = Var(None)
+
+  def apply(pageS: Signal[ItemByIdPage]): ReactiveHtmlElement[HTMLDivElement] =
+    val fetchItemS: Signal[Status[ItemByIdPage, Either[Throwable, ResponseT]]] =
+      pageS.flatMapWithStatus { p => fetchItem(p.id) }
+
+    val fetchItemPendingS: Signal[Option[String]] = fetchItemS.map {
+      case Pending(_) => "Fetching data...".some
+      case _          => None
+    }
+
+    val fetchItemSuccessS: Signal[Option[Item]] = fetchItemS
+      .map {
+        case Resolved(
+              _,
+              Right(HttpResponse.Ok(Right[Throwable, Item](item))),
+              _
+            ) =>
+          item.some
+        case _ => None
+      }
+
+    val fetchItemErrorS: Signal[Option[String]] = fetchItemS.map {
+      case Resolved(_, Left(err), _) => s"Error: $err".some
+      case Resolved(_, Right(resp: UnexpectedResponse), _) =>
+        s"Unexpected response (${resp.statusCode}): ${resp.body}".some
+      case Resolved(_, Right(err: ServerError), _) =>
+        s"Server error (${err.statusCode})".some
+      case Resolved(_, Right(HttpResponse.NotFound), _) =>
+        s"Not Found (${HttpResponse.NotFound.statusCode})".some
+      case Resolved(_, Right(HttpResponse.Ok(Left(err))), _) =>
+        s"Failed to parse 200 response body. Error: $err".some
+      case _ => None
+    }
+
+    div(
+      h1(
+        text <-- fetchedItemV.signal.combineWith(pageS).map { (item, page) =>
+          item.flatMap(_.label) match {
+            case Some(label) => label
+            case None        => s"Item ${page.id}"
+          }
+        }
+      ),
+      child.maybe <-- fetchItemPendingS.splitOption { (_, signal) =>
+        p(text <-- signal)
+      },
+      fetchItemErrorS --> errorV.writer,
+      fetchItemSuccessS --> fetchedItemV.writer,
+      div(
+        button(
+          typ := "button",
+          text <-- editedItemV.signal.map {
+            case Some(_) => "Discard changes"
+            case None    => "Edit"
+          },
+          onClick
+            .mapTo[() => Option[Item]](fetchedItemV.now) --> editedItemV
+            .updater[() => Option[Item]] {
+              case (Some(_), _) => None
+              case (None, item) => item.apply()
+            }
+        )
+      ),
+      child.maybe <-- fetchedItemV.signal.splitOption { (_, signal) =>
+        p(text <-- signal.map { item => s"ID: ${item.id}" })
+      },
+      children <-- fetchedItemV.signal
+        .combineWith(editedItemV.signal)
+        .splitMatchOne
+        .handleCase[
+          (Option[Item], Option[Item]),
+          Item,
+          List[ReactiveHtmlElement[HTMLElement]]
+        ] { case (Some(item), None) => item } { (_, signal) =>
+          List(
+            p(text <-- signal.map { item =>
+              s"Slug: ${item.slug.getOrElse("")}"
+            }),
+            p(text <-- signal.map { item =>
+              s"Acquire date : ${item.acquireDate.getOrElse("")}"
+            }),
+            p(text <-- signal.map { item =>
+              s"Acquire price: ${item.acquirePrice
+                  .fold("") { p => s"${p.value} ${p.currency}" }}"
+            }),
+            p(text <-- signal.map { item =>
+              s"Acquire source: ${item.acquireSource.getOrElse("")}"
+            }),
+            p(text <-- signal.map { item =>
+              s"Details: ${item.details.getOrElse("")}"
+            }),
+            p(text <-- signal.map { item =>
+              s"Storage: ${item.storage.flatMap(_.label)}"
+            })
+          )
+        }
+        .handleCase[(Option[Item], Option[Item]), Item, List[
+          ReactiveHtmlElement[HTMLElement]
+        ]] { case (_, Some(item)) => item } { (item, signal) =>
+          val editSlugDiv = div(
+            label(forId := "slug-input", "Slug"),
+            input(
+              idAttr := "slug-input",
+              controlled(
+                value <-- signal.map(_.slug.getOrElse("")),
+                onInput.mapToValue --> editedItemV.updater[String] {
+                  (opt, slug) =>
+                    opt.map(_.copy(slug = slug.some))
+                }
+              )
+            )
+          )
+          val editAcquireDateDiv = div(
+            label(forId := "acquireDate-input", "Acquire date"),
+            input(
+              idAttr := "acquireDate-input",
+              controlled(
+                value <-- signal.map(_.acquireDate.getOrElse("")),
+                onInput.mapToValue --> editedItemV.updater[String] {
+                  (opt, acquireDate) =>
+                    opt.map(_.copy(acquireDate = acquireDate.some))
+                }
+              )
+            )
+          )
+
+          List(
+            editSlugDiv,
+            editAcquireDateDiv
+          )
+        }
+        .toSignal
+    )
   private def fetchItem(id: Int): EventStream[Either[Throwable, ResponseT]] =
     FetchStream
       .withDecoder[ResponseT](HttpResponse.handleServerErrorResponse orElse {
@@ -41,52 +179,4 @@ object ItemByIdView {
       })
       .get(s"$BACKEND_ENDPOINT/items/$id")
       .recoverToEither
-
-  def apply(pageS: Signal[ItemByIdPage]): ReactiveHtmlElement[HTMLDivElement] =
-    val fetchItemStream = pageS.flatMapSwitch { p => fetchItem(p.id) }
-    val itemS: Signal[Option[Item]] = fetchItemStream
-      .collect[Option[Item]] {
-        case Right(HttpResponse.Ok(Right[Throwable, Item](item))) =>
-          item.some
-        case _ => None
-      }
-      .startWith(None)
-    val errS: Signal[Option[String]] = fetchItemStream
-      .collect {
-        case Right(HttpResponse.Ok(Right(_))) => None
-        case Right(HttpResponse.Ok(Left(err))) =>
-          s"Failed to parse 200 response body. Error: $err".some
-        case Right(HttpResponse.NotFound) =>
-          s"Not Found (${HttpResponse.NotFound.statusCode})".some
-        case Right(resp: ServerError) =>
-          s"Server error (${resp.statusCode})".some
-        case Right(resp: UnexpectedResponse) =>
-          s"Unexpected response: ${resp.body}".some
-        case Left(err) => s"Error: $err".some
-      }
-      .startWith(None)
-
-    div(
-      h1(text <-- itemS.map(_.flatMap(_.label)).combineWith(pageS).map {
-        case (None, p)        => s"Item ${p.id}"
-        case (Some(label), _) => label
-      }),
-      child.maybe <-- errS.splitOption { (_, signal) =>
-        p(text <-- signal, cls := "error")
-      },
-      children <-- itemS.map {
-        case Some(item) =>
-          List(
-            p(s"ID: ${item.id}"),
-            p(s"Slug: ${item.slug.getOrElse("")}"),
-            p(s"Acquire date : ${item.acquireDate.getOrElse("")}"),
-            p(s"Acquire price: ${item.acquirePrice
-                .fold("") { p => s"${p.value} ${p.currency}" }}"),
-            p(s"Acquire source: ${item.acquireSource.getOrElse("")}"),
-            p(s"Details: ${item.details.getOrElse("")}"),
-            p(s"Storage: ${item.storage.flatMap(_.label)}")
-          )
-        case None => List.empty
-      }
-    )
 }
