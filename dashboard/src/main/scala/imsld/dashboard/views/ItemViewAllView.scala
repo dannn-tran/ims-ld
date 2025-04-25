@@ -9,8 +9,10 @@ import io.circe.parser.decode
 import org.scalajs.dom.HTMLDivElement
 
 import imsld.dashboard.HttpResponse.UnexpectedResponse
+import imsld.dashboard.constants.BACKEND_ENDPOINT
 import imsld.dashboard.implicits.HeadersImplicit
-import imsld.dashboard.{BACKEND_ENDPOINT, HttpResponse}
+import imsld.dashboard.pages.ItemByIdPage
+import imsld.dashboard.{HttpResponse, JsRouter}
 import imsld.model.{ItemPartial, PagedResponse}
 
 object ItemViewAllView:
@@ -25,7 +27,8 @@ object ItemViewAllView:
     "acquire date",
     "acquire price",
     "details",
-    "storage"
+    "storage",
+    ""
   )
 
   def apply(): ReactiveHtmlElement[HTMLDivElement] =
@@ -111,7 +114,8 @@ object ItemViewAllView:
       s"${p.value} ${p.currency}"
     }),
     td(item.details),
-    td(item.storage.map(_.label))
+    td(item.storage.map(_.label)),
+    td(a("View item", JsRouter.navigateTo(ItemByIdPage(item.id))))
   )
 
   private def ceilDiv(a: Int, b: Int): Int = a / b + (if (a % b == 0) 0 else 1)

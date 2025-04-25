@@ -1,12 +1,7 @@
 package imsld.dashboard.views
 
-import java.text.NumberFormat
-import java.util.Locale
-
-import scala.util.Try
-
 import cats.data.Validated.{Invalid, Valid}
-import cats.data.{NonEmptyChain, Validated, ValidatedNec}
+import cats.data.{Validated, ValidatedNec}
 import cats.syntax.all.*
 import com.raquo.airstream.status.{Pending, Resolved}
 import com.raquo.laminar.api.L.*
@@ -17,7 +12,14 @@ import io.circe.parser.decode
 import io.circe.syntax.*
 import org.scalajs.dom.HTMLDivElement
 
-import imsld.dashboard.{BACKEND_ENDPOINT, LogLevel}
+import imsld.dashboard.LogLevel
+import imsld.dashboard.constants.BACKEND_ENDPOINT
+import imsld.dashboard.utils.ItemDtoFlat
+import imsld.dashboard.utils.ItemDtoFlat.{
+  acquirePriceCurrencyInput,
+  acquirePriceValueInput,
+  ccyDataList
+}
 import imsld.model.{
   InsertedRowWithId,
   ItemNew,
@@ -124,7 +126,9 @@ object ItemAddBulkView:
       button(
         typ := "submit",
         "Submit",
-        onClick.preventDefault.mapTo(getDto) --> submitBus.writer,
+        onClick.preventDefault.mapTo(
+          itemsVar.now().traverse(_.validate)
+        ) --> submitBus.writer,
         submitBus.events.collect {
           case Invalid(err) =>
             (LogLevel.Error, err.toList.mkString("\n")).some
@@ -154,36 +158,6 @@ object ItemAddBulkView:
         disabled <-- inflightSubmitSignal
       )
     )
-
-  private def getDto: ValidatedNec[String, List[ItemNew]] =
-    itemsVar.now().traverse(validate)
-  private def validate(item: ItemDtoFlat): ValidatedNec[String, ItemNew] =
-    for
-      acquirePrice <- (item.acquirePriceCurrency, item.acquirePriceValue) match
-        case (Some(ccy), Some(value)) => Valid(MonetaryAmount(ccy, value).some)
-        case (_, None)                => Valid(None)
-        case _ =>
-          Invalid(
-            NonEmptyChain(
-              s"Currency of acquisition price must be present when value is present for $item"
-            )
-          )
-      slug = item.slug.flatMap(sanitiseText)
-      label = item.label.flatMap(sanitiseText)
-      acquireSource = item.acquireSource.flatMap(sanitiseText)
-      details = item.details.flatMap(sanitiseText)
-    yield ItemNew(
-      slug,
-      label,
-      item.acquireDate,
-      acquirePrice,
-      acquireSource,
-      item.storageId,
-      details
-    )
-  private def sanitiseText(str: String): Option[String] =
-    val trimmed = str.trim()
-    if (trimmed.isEmpty()) None else trimmed.some
 
   private val inputForm =
     form(
@@ -290,67 +264,30 @@ object ItemAddBulkView:
     )
 
     def acquirePriceCell =
-      val lastGoodPriceValue: Var[String] = Var("")
       td(
         children <-- inflightSubmitOrResolvedRightSignal.splitBoolean(
           _ => List.empty,
           _ =>
             List(
-              input(
-                cls := "ItemAddTable-acquirePriceCell-ccy",
-                placeholder := "ccy",
-                controlled(
-                  value <-- signal.map(_.acquirePriceCurrency.getOrElse("")),
-                  onInput.mapToValue --> itemsVar
-                    .updater[String] { (lst, str) =>
-                      lst.updated(
-                        idx,
-                        lst(idx).copy(acquirePriceCurrency =
-                          if (str.isEmpty()) None else str.some
-                        )
-                      )
-                    }
-                ),
-                listId := "defaultCurrencies",
-                size := 8,
-                cls("error") <-- signal.map { i =>
-                  (i.acquirePriceCurrency, i.acquirePriceValue) match {
-                    case (Some(ccy), Some(_)) if !ccy.isBlank() => true
-                    case _                                      => false
-                  }
-                }
-              ),
-              dataList(
-                idAttr := "defaultCurrencies",
-                List("SGD", "MYR", "USD", "EUR", "VND").map { ccy =>
-                  option(value := ccy)
-                }
-              ),
-              input(
-                placeholder := "value",
-                controlled(
-                  value <-- lastGoodPriceValue.signal,
-                  onInput.mapToValue --> lastGoodPriceValue.writer
-                ),
-                lastGoodPriceValue.signal --> itemsVar.updater[String] {
-                  (lst, str) =>
+              acquirePriceCurrencyInput(
+                itemS = signal,
+                updater = itemsVar
+                  .updater { (lst, ccy) =>
                     lst.updated(
                       idx,
-                      lst(idx).copy(acquirePriceValue =
-                        Try(BigDecimal(str.filter(_ != ','))).toOption
-                      )
+                      lst(idx).copy(acquirePriceCurrency = ccy)
                     )
-                },
-                signal.map(_.acquirePriceValue) --> lastGoodPriceValue
-                  .updater[Option[BigDecimal]] { (prev, opt) =>
-                    opt.fold(prev) { bd =>
-                      val formatter = NumberFormat.getInstance(Locale.US)
-                      formatter.setMaximumFractionDigits(bd.scale)
-                      formatter.setMinimumFractionDigits(bd.scale)
-                      formatter.format(bd)
-                    }
-                  },
-                size := 16
+                  }
+              ),
+              ccyDataList,
+              acquirePriceValueInput(
+                itemS = signal,
+                updater = itemsVar.updater { (lst, v) =>
+                  lst.updated(
+                    idx,
+                    lst(idx).copy(acquirePriceValue = v)
+                  )
+                }
               )
             )
         ),
@@ -452,15 +389,3 @@ object ItemAddBulkView:
       storageCell,
       removeRowCell
     )
-
-  private final case class ItemDtoFlat(
-      slug: Option[String] = None,
-      label: Option[String] = None,
-      publishDate: Option[String] = None,
-      acquireDate: Option[String] = None,
-      acquirePriceCurrency: Option[String] = None,
-      acquirePriceValue: Option[BigDecimal] = None,
-      acquireSource: Option[String] = None,
-      details: Option[String] = None,
-      storageId: Option[Int] = None
-  )

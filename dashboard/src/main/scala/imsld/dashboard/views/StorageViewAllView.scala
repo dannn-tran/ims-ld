@@ -7,7 +7,7 @@ import io.circe.generic.auto.*
 import io.circe.parser.decode
 import org.scalajs.dom.HTMLDivElement
 
-import imsld.dashboard.BACKEND_ENDPOINT
+import imsld.dashboard.constants.BACKEND_ENDPOINT
 import imsld.model.{PagedResponse, StoragePartial, StorageSlim}
 
 object StorageViewAllView {

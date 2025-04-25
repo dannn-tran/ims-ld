@@ -8,10 +8,17 @@ import io.circe.generic.auto.*
 import io.circe.parser.decode
 import org.scalajs.dom.{HTMLDivElement, HTMLElement}
 
+import imsld.dashboard.HttpResponse
 import imsld.dashboard.HttpResponse.{ServerError, UnexpectedResponse}
+import imsld.dashboard.constants.BACKEND_ENDPOINT
 import imsld.dashboard.implicits.HeadersImplicit
 import imsld.dashboard.pages.ItemByIdPage
-import imsld.dashboard.{BACKEND_ENDPOINT, HttpResponse}
+import imsld.dashboard.utils.ItemDtoFlat
+import imsld.dashboard.utils.ItemDtoFlat.{
+  acquirePriceCurrencyInput,
+  acquirePriceValueInput,
+  ccyDataList
+}
 import imsld.model.Item
 
 object ItemByIdView {
@@ -20,7 +27,7 @@ object ItemByIdView {
     HttpResponse.UnexpectedResponse
 
   private val fetchedItemV: Var[Option[Item]] = Var(None)
-  private val editedItemV: Var[Option[Item]] = Var(None)
+  private val editedItemV: Var[Option[ItemDtoFlat]] = Var(None)
   private val errorV: Var[Option[String]] = Var(None)
 
   def apply(pageS: Signal[ItemByIdPage]): ReactiveHtmlElement[HTMLDivElement] =
@@ -84,7 +91,18 @@ object ItemByIdView {
             .mapTo[() => Option[Item]](fetchedItemV.now) --> editedItemV
             .updater[() => Option[Item]] {
               case (Some(_), _) => None
-              case (None, item) => item.apply()
+              case (None, item) =>
+                item.apply().map { item =>
+                  ItemDtoFlat(
+                    slug = item.slug,
+                    label = item.label,
+                    acquireDate = item.acquireDate,
+                    acquirePriceCurrency = item.acquirePrice.map(_.currency),
+                    acquirePriceValue = item.acquirePrice.map(_.value),
+                    details = item.details,
+                    storageId = item.storage.map(_.id)
+                  )
+                }
             }
         )
       ),
@@ -95,21 +113,33 @@ object ItemByIdView {
         .combineWith(editedItemV.signal)
         .splitMatchOne
         .handleCase[
-          (Option[Item], Option[Item]),
+          (Option[Item], Option[ItemDtoFlat]),
           Item,
           List[ReactiveHtmlElement[HTMLElement]]
-        ] { case (Some(item), None) => item } { (item, _) =>
+        ] { case (Some(item), None) => item } { (_, signal) =>
           List(
-            p(s"Slug: ${item.slug.getOrElse("")}"),
-            p(s"Acquire date : ${item.acquireDate.getOrElse("")}"),
-            p(s"Acquire price: ${item.acquirePrice
-                .fold("") { p => s"${p.value} ${p.currency}" }}"),
-            p(s"Acquire source: ${item.acquireSource.getOrElse("")}"),
-            p(s"Details: ${item.details.getOrElse("")}"),
-            p(s"Storage: ${item.storage.flatMap(_.label)}")
+            p(text <-- signal.map { item =>
+              s"Slug: ${item.slug.getOrElse("")}"
+            }),
+            p(text <-- signal.map { item =>
+              s"Acquire date : ${item.acquireDate.getOrElse("")}"
+            }),
+            p(text <-- signal.map { item =>
+              s"Acquire price: ${item.acquirePrice
+                  .fold("") { p => s"${p.value} ${p.currency}" }}"
+            }),
+            p(text <-- signal.map { item =>
+              s"Acquire source: ${item.acquireSource.getOrElse("")}"
+            }),
+            p(text <-- signal.map { item =>
+              s"Details: ${item.details.getOrElse("")}"
+            }),
+            p(text <-- signal.map { item =>
+              s"Storage: ${item.storage.flatMap(_.label)}"
+            })
           )
         }
-        .handleCase[(Option[Item], Option[Item]), Item, List[
+        .handleCase[(Option[Item], Option[ItemDtoFlat]), ItemDtoFlat, List[
           ReactiveHtmlElement[HTMLElement]
         ]] { case (_, Some(item)) => item } { (_, signal) =>
           val editSlugDiv = div(
@@ -138,10 +168,27 @@ object ItemByIdView {
               )
             )
           )
+          val editAcquirePriceDiv =
+            div(
+              acquirePriceCurrencyInput(
+                itemS = signal,
+                updater = editedItemV.updater { (item, ccy) =>
+                  item.map(_.copy(acquirePriceCurrency = ccy))
+                }
+              ),
+              ccyDataList,
+              acquirePriceValueInput(
+                itemS = signal,
+                updater = editedItemV.updater { (item, v) =>
+                  item.map(_.copy(acquirePriceValue = v))
+                }
+              )
+            )
 
           List(
             editSlugDiv,
-            editAcquireDateDiv
+            editAcquireDateDiv,
+            editAcquirePriceDiv
           )
         }
         .toSignal
