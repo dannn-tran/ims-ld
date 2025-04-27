@@ -28,38 +28,22 @@ object ItemByIdView {
 
   private val fetchedItemV: Var[Option[Item]] = Var(None)
   private val editedItemV: Var[Option[ItemDtoFlat]] = Var(None)
-  private val errorV: Var[Option[String]] = Var(None)
 
   def apply(pageS: Signal[ItemByIdPage]): ReactiveHtmlElement[HTMLDivElement] =
     val fetchItemS: Signal[Status[ItemByIdPage, Either[Throwable, ResponseT]]] =
       pageS.flatMapWithStatus { p => fetchItem(p.id) }
-
-    val fetchItemPendingS: Signal[Option[String]] = fetchItemS.splitStatus(
-      (_, _) => None,
-      (_, _) => "Fetching data...".some
-    )
-
-    val fetchItemSuccessS: Signal[Option[Item]] = fetchItemS
-      .map {
-        case Resolved(
-              _,
-              Right(HttpResponse.Ok(Right[Throwable, Item](item))),
-              _
-            ) =>
-          item.some
-        case _ => None
-      }
-
-    val fetchItemErrorS: Signal[Option[String]] = fetchItemS.map {
-      case Resolved(_, Left(err), _) => s"Error: $err".some
+    val fetchItemStatusS: Signal[Option[(Boolean, String)]] = fetchItemS.map {
+      case Pending(_) => (true, "Fetching data...").some
+      case Resolved(_, Left(err), _) =>
+        (false, s"Failed to fetch. Error: $err").some
       case Resolved(_, Right(resp: UnexpectedResponse), _) =>
-        s"Unexpected response (${resp.statusCode}): ${resp.body}".some
+        (false, s"Unexpected response (${resp.statusCode}): ${resp.body}").some
       case Resolved(_, Right(err: ServerError), _) =>
-        s"Server error (${err.statusCode})".some
+        (false, s"Server error (${err.statusCode})").some
       case Resolved(_, Right(HttpResponse.NotFound), _) =>
-        s"Not Found (${HttpResponse.NotFound.statusCode})".some
+        (false, s"Not Found (${HttpResponse.NotFound.statusCode})").some
       case Resolved(_, Right(HttpResponse.Ok(Left(err))), _) =>
-        s"Failed to parse 200 response body. Error: $err".some
+        (false, s"Failed to parse 200 response body. Error: $err").some
       case _ => None
     }
 
@@ -72,14 +56,22 @@ object ItemByIdView {
           }
         }
       ),
-      child.maybe <-- fetchItemPendingS.splitOption { (_, signal) =>
-        p(text <-- signal)
+      child.maybe <-- fetchItemStatusS.splitOption { (_, signal) =>
+        p(
+          text <-- signal.map { (_, txt) => txt },
+          cls("error") <-- signal.map { (ok, _) => !ok }
+        )
       },
-      fetchItemErrorS --> errorV.writer,
-      fetchItemSuccessS --> fetchedItemV.writer,
-      child.maybe <-- errorV.splitOption { (_, signal) =>
-        p(text <-- signal, cls := "error")
-      },
+      fetchItemS
+        .map {
+          case Resolved(
+                _,
+                Right(HttpResponse.Ok(Right[Throwable, Item](item))),
+                _
+              ) =>
+            item.some
+          case _ => None
+        } --> fetchedItemV.writer,
       div(
         button(
           typ := "button",
@@ -98,9 +90,9 @@ object ItemByIdView {
                     label = item.label,
                     acquireDate = item.acquireDate,
                     acquirePriceCurrency = item.acquirePrice.map(_.currency),
-                    acquirePriceValue = item.acquirePrice.map(_.value),
+                    acquirePriceValue = item.acquirePrice.map(_.value).asRight,
                     details = item.details,
-                    storageId = item.storage.map(_.id)
+                    storageId = item.storage.map(_.id).asRight
                   )
                 }
             }
@@ -201,13 +193,22 @@ object ItemByIdView {
                   onInput.mapToValue --> lastGoodPriceValue.writer
                 ),
                 lastGoodPriceValue.signal.map { str =>
-                  Try(BigDecimal(str.filter(_ != ','))).toOption
-                } --> editedItemV.updater[Option[BigDecimal]] { (item, v) =>
-                  item.map(_.copy(acquirePriceValue = v))
+                  if (str.isBlank()) Right(None)
+                  else
+                    Try(BigDecimal(str.filter(_ != ','))).fold(
+                      _ => Left(s"Invalid decimal $str"),
+                      bd => Right(bd.some)
+                    )
+                } --> editedItemV.updater[Either[String, Option[BigDecimal]]] {
+                  (item, v) =>
+                    item.map(_.copy(acquirePriceValue = v))
                 },
                 signal.map(_.acquirePriceValue) --> lastGoodPriceValue
-                  .updater[Option[BigDecimal]] { (prev, opt) =>
-                    opt.fold(prev)(BigDecimalFormatter.format)
+                  .updater[Either[String, Option[BigDecimal]]] { (prev, v) =>
+                    v match {
+                      case Right(Some(bd)) => BigDecimalFormatter.format(bd)
+                      case _               => prev
+                    }
                   },
                 size := 16
               )
@@ -273,19 +274,19 @@ object ItemByIdView {
                   .map { lst =>
                     lst.map { s => option(value := s.id.toString(), s.label) }
                   },
-                value <-- signal.map(_.storageId.fold("")(_.toString())),
+                value <-- signal.map(_.storageId match {
+                  case Right(Some(id)) => id.toString()
+                  case _               => ""
+                }),
                 onInput.mapToValue.map[Either[String, Option[Int]]] { x =>
                   if (x.isEmpty()) Right(None)
                   else
                     x.toIntOption match
                       case None        => Left("Invalid storage_id: " + x)
                       case Some(value) => Right(value.some)
-                } --> storageIdInputBus.writer,
-                storageIdInputBus.events.collect {
-                  case Right(value) => value
-                  case Left(_)      => None
-                } --> editedItemV.updater[Option[Int]] { (opt, storageId) =>
-                  opt.map(_.copy(storageId = storageId))
+                } --> editedItemV.updater[Either[String, Option[Int]]] {
+                  (opt, storageId) =>
+                    opt.map(_.copy(storageId = storageId))
                 }
               ),
               child.maybe <-- errS.splitOption { (_, signal) =>

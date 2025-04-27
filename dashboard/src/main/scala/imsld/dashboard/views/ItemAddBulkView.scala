@@ -1,6 +1,6 @@
 package imsld.dashboard.views
 
-import cats.data.Validated.{Invalid, Valid}
+import cats.data.Validated.Valid
 import cats.data.{Validated, ValidatedNec}
 import cats.syntax.all.*
 import com.raquo.airstream.status.{Pending, Resolved}
@@ -12,7 +12,6 @@ import io.circe.parser.decode
 import io.circe.syntax.*
 import org.scalajs.dom.HTMLDivElement
 
-import imsld.dashboard.LogLevel
 import imsld.dashboard.constants.BACKEND_ENDPOINT
 import imsld.dashboard.utils.ItemDtoFlat
 import imsld.model.{
@@ -26,6 +25,7 @@ import imsld.dashboard.constants.CCY_OPTIONS
 import imsld.dashboard.utils.BigDecimalFormatter
 import scala.util.Try
 import imsld.dashboard.utils.FetchStorages
+import cats.data.Validated.Invalid
 
 object ItemAddBulkView:
   given Encoder[ItemNew] = Encoder.derived
@@ -41,16 +41,23 @@ object ItemAddBulkView:
     "storage",
     ""
   )
+  private val clearDataBus: EventBus[Unit] = new EventBus
+  private val submitBus: EventBus[Unit] = new EventBus
 
-  private val itemsVar: Var[List[ItemDtoFlat]] = Var(List(ItemDtoFlat()))
   private val storagesFetchStream = FetchStorages.stream
-  private val storagesVar: Var[List[StorageSlim]] = Var(List.empty)
+  private val storagesS: Signal[List[StorageSlim]] = storagesFetchStream
+    .collect { case Right(resp) => resp.data }
+    .startWith(List.empty)
 
-  private val submitBus: EventBus[ValidatedNec[String, List[ItemNew]]] =
-    new EventBus
+  private val itemsV: Var[List[ItemDtoFlat]] = Var(List(ItemDtoFlat()))
+  private val itemsValidatedV
+      : Var[ValidatedNec[(Int, List[String]), List[ItemNew]]] =
+    Var(Valid(List.empty))
+
   private val respStream: EventStream[
     Status[List[ItemNew], Either[Throwable, List[InsertedRowWithId]]]
   ] = submitBus.events
+    .mapTo(itemsValidatedV.now())
     .collect { case Valid(dto) => dto }
     .flatMapWithStatus { dto =>
       FetchStream
@@ -64,6 +71,14 @@ object ItemAddBulkView:
         .recoverToEither
         .map(_.fold(err => Left(err), decode[List[InsertedRowWithId]]))
     }
+  private val respStatusS: Signal[Option[(Boolean, String)]] =
+    (respStream.map {
+      case Pending(_) => (true, "Submitting...").some
+      case Resolved(_, Right(resp), _) =>
+        (true, s"New items created successfully. IDs: ${resp.map(_.id)}").some
+      case Resolved(_, Left(err), _) =>
+        (false, s"Failed to create new items. Error: $err").some
+    } mergeWith clearDataBus.events.mapTo(None)).startWith(None)
   private val inflightSubmitSignal: Signal[Boolean] = respStream
     .collect {
       case Pending(_) => true
@@ -77,28 +92,45 @@ object ItemAddBulkView:
       case _                        => false
     }
     .startWith(false)
-  private val logVar: Var[Option[(LogLevel, String)]] = Var(None)
 
   def apply(): ReactiveHtmlElement[HTMLDivElement] =
     div(
-      h1("Bulk item creation"),
-      storagesFetchStream.collect { case Right(resp) =>
-        resp.data
-      } --> storagesVar.writer,
-      storagesFetchStream.collect {
-        case Right(_)  => None
-        case Left(err) => (LogLevel.Error, err.toString()).some
-      } --> logVar.writer,
-      controlPanel,
-      child.maybe <-- logVar.signal.splitOption { (_, signal) =>
-        div(
-          text <-- signal.map { (_, str) => str },
-          cls("error") <-- signal.map {
-            case (LogLevel.Error, _) => true
-            case _                   => false
+      clearDataBus.events.mapTo(List.empty) --> itemsV.writer,
+      itemsV.signal.map { items =>
+        items.zipWithIndex
+          .foldLeft[ValidatedNec[(Int, List[String]), List[ItemNew]]](
+            Valid(List.empty)
+          ) { case (acc, (item, i)) =>
+            (
+              acc,
+              item.validate.leftMap { errors =>
+                (i, errors.toList)
+              }.toValidatedNec
+            ) mapN { (lst, validItem) => lst.appended(validItem) }
           }
-        )
-      },
+      } --> itemsValidatedV.writer,
+      h1("Bulk item creation"),
+      child.maybe <-- storagesFetchStream.splitEither(
+        (_, signal) =>
+          p(
+            text <-- signal.map { err =>
+              s"Fail to retrieve storages. Error: $err"
+            },
+            cls := "error"
+          ).some,
+        (_, _) => None
+      ),
+      children <-- itemsValidatedV.signal
+        .map {
+          case Valid(a)   => List.empty
+          case Invalid(e) => e.toList
+        }
+        .split { (idx, _) => idx } { (idx, _, signal) =>
+          p(text <-- signal.map { (_, errors) =>
+            s"Invalid values for item $idx. Reasons: ${errors.mkString("; ")}"
+          })
+        },
+      controlPanel,
       inputForm
     )
 
@@ -106,7 +138,7 @@ object ItemAddBulkView:
     div(
       button(
         typ := "button",
-        onClick --> itemsVar.updater { (prev, _) =>
+        onClick --> itemsV.updater { (prev, _) =>
           prev.appended(ItemDtoFlat())
         },
         "Add",
@@ -115,35 +147,23 @@ object ItemAddBulkView:
       button(
         typ := "submit",
         "Submit",
-        onClick.preventDefault.mapTo(
-          itemsVar.now().traverse(_.validate)
-        ) --> submitBus.writer,
-        submitBus.events.collect {
-          case Invalid(err) =>
-            (LogLevel.Error, err.toList.mkString("\n")).some
-          case Valid(_) => None
-        } --> logVar.writer,
-        disabled <-- inflightSubmitOrResolvedRightSignal
+        onClick.preventDefault.mapToUnit --> submitBus.writer,
+        disabled <-- (itemsValidatedV.signal.map(_.isInvalid)
+          combineWith inflightSubmitOrResolvedRightSignal).map {
+          case (false, false) => false
+          case _              => true
+        }
       ),
-      respStream.collect {
-        case Pending(_) => (LogLevel.Info, "Submitting...")
-        case Resolved(_, Right(resp), _) =>
-          (
-            LogLevel.Info,
-            "New items successfully created. IDs: " + resp
-              .map(_.id)
-              .mkString(", ")
-          )
-        case Resolved(_, Left(err), _) =>
-          (
-            LogLevel.Error,
-            "Failed to create new items. Error: " + err.toString()
-          )
-      } --> logVar.writer.contramap[(LogLevel, String)](_.some),
+      child.maybe <-- respStatusS.splitOption { (_, signal) =>
+        p(
+          text <-- signal.map { (_, txt) => txt },
+          cls("error") <-- signal.map { (ok, _) => !ok }
+        )
+      },
       button(
         typ := "button",
         "Clear",
-        onClick.mapTo(List.empty) --> itemsVar.writer,
+        onClick.mapToUnit --> clearDataBus.writer,
         disabled <-- inflightSubmitSignal
       )
     )
@@ -158,7 +178,7 @@ object ItemAddBulkView:
           )
         ),
         tbody(
-          children <-- itemsVar.signal.splitByIndex { (idx, _, signal) =>
+          children <-- itemsV.signal.splitByIndex { (idx, _, signal) =>
             TableBodyRow(idx, signal)
           }
         )
@@ -211,14 +231,14 @@ object ItemAddBulkView:
 
     val slugCell = mkTextInputCell(
       accessor = _.slug.getOrElse(""),
-      updater = itemsVar.updater { (lst, slug) =>
+      updater = itemsV.updater { (lst, slug) =>
         lst.updated(idx, lst(idx).copy(slug = slug.some))
       }
     )
 
     val labelCell = mkTextAreaCell(
       accessor = _.label.getOrElse(""),
-      updater = itemsVar.updater { (lst, str) =>
+      updater = itemsV.updater { (lst, str) =>
         val processedStr = str.filter { c =>
           !"\r\n".contains(c)
         }
@@ -232,7 +252,7 @@ object ItemAddBulkView:
 
     val publishDateCell = mkTextInputCell(
       accessor = _.publishDate.getOrElse(""),
-      updater = itemsVar.updater { (lst, str) =>
+      updater = itemsV.updater { (lst, str) =>
         lst.updated(
           idx,
           lst(idx).copy(publishDate = str.some)
@@ -242,7 +262,7 @@ object ItemAddBulkView:
 
     val acquireDateCell = mkTextInputCell(
       accessor = _.acquireDate.getOrElse(""),
-      updater = itemsVar
+      updater = itemsV
         .updater[String] { (lst, str) =>
           lst.updated(
             idx,
@@ -264,7 +284,7 @@ object ItemAddBulkView:
                 placeholder := "ccy",
                 controlled(
                   value <-- signal.map(_.acquirePriceCurrency.getOrElse("")),
-                  onInput.mapToValue --> itemsVar
+                  onInput.mapToValue --> itemsV
                     .updater[String] { (lst, ccy) =>
                       lst.updated(
                         idx,
@@ -288,16 +308,25 @@ object ItemAddBulkView:
                   onInput.mapToValue --> lastGoodPriceValue.writer
                 ),
                 lastGoodPriceValue.signal.map { str =>
-                  Try(BigDecimal(str.filter(_ != ','))).toOption
-                } --> itemsVar.updater[Option[BigDecimal]] { (lst, v) =>
-                  lst.updated(
-                    idx,
-                    lst(idx).copy(acquirePriceValue = v)
-                  )
+                  if (str.isEmpty()) Right(None)
+                  else
+                    Try(BigDecimal(str.filter(_ != ','))).fold(
+                      _ => Left(s"Invalid decimal: $str"),
+                      bd => Right(bd.some)
+                    )
+                } --> itemsV.updater[Either[String, Option[BigDecimal]]] {
+                  (lst, v) =>
+                    lst.updated(
+                      idx,
+                      lst(idx).copy(acquirePriceValue = v)
+                    )
                 },
                 signal.map(_.acquirePriceValue) --> lastGoodPriceValue
-                  .updater[Option[BigDecimal]] { (prev, opt) =>
-                    opt.fold(prev)(BigDecimalFormatter.format)
+                  .updater[Either[String, Option[BigDecimal]]] { (prev, opt) =>
+                    opt match {
+                      case Right(Some(bd)) => BigDecimalFormatter.format(bd)
+                      case _               => prev
+                    }
                   },
                 size := 16
               )
@@ -315,7 +344,7 @@ object ItemAddBulkView:
 
     val acquireSourceCell = mkTextAreaCell(
       accessor = _.acquireSource.getOrElse(""),
-      updater = itemsVar
+      updater = itemsV
         .updater { (lst, str) =>
           lst.updated(
             idx,
@@ -326,7 +355,7 @@ object ItemAddBulkView:
 
     val detailsCell = mkTextAreaCell(
       accessor = _.details.getOrElse(""),
-      updater = itemsVar
+      updater = itemsV
         .updater { (lst, str) =>
           lst.updated(
             idx,
@@ -335,14 +364,14 @@ object ItemAddBulkView:
         }
     )
 
-    val storageIdInputBus: EventBus[Either[String, Option[Int]]] = new EventBus
     val storageCell = td(
-      text <-- lockAndItemSignal.withCurrentValueOf(storagesVar).map {
+      text <-- lockAndItemSignal.withCurrentValueOf(storagesS).map {
         case (true, item, storages) =>
-          item.storageId
-            .flatMap { id => storages.find(_.id == id) }
-            .flatMap(_.label)
-            .getOrElse("")
+          item.storageId match {
+            case Right(Some(id)) =>
+              storages.find(_.id == id).flatMap(_.label).getOrElse("")
+            case _ => ""
+          }
         case _ => ""
       },
       child.maybe <-- inflightSubmitOrResolvedRightSignal.splitBoolean(
@@ -350,30 +379,22 @@ object ItemAddBulkView:
         _ =>
           select(
             option(value := "", "Choose storage location..."),
-            children <-- storagesVar.signal.map { lst =>
+            children <-- storagesS.map { lst =>
               lst.map { s => option(value := s.id.toString(), s.label) }
             },
-            value <-- signal.map(_.storageId.fold("")(_.toString())),
+            value <-- signal.map(_.storageId match {
+              case Right(Some(id)) => id.toString()
+              case _               => ""
+            }),
             onInput.mapToValue.map[Either[String, Option[Int]]] { x =>
               if (x.isEmpty()) Right(None)
               else
                 x.toIntOption match
                   case None        => Left("Invalid storage_id: " + x)
                   case Some(value) => Right(value.some)
-            } --> storageIdInputBus.writer,
-            storageIdInputBus.events.collect {
-              case Right(value) => value
-              case Left(_)      => None
-            } --> itemsVar.updater[Option[Int]] { (lst, storageId) =>
-              lst.updated(idx, lst(idx).copy(storageId = storageId))
-            },
-            storageIdInputBus.events.collect { case Left(err) =>
-              err
-            } --> logVar.writer.contramap { err =>
-              (
-                LogLevel.Error,
-                s"Error encountered while updating storage_id for row $idx: $err"
-              ).some
+            } --> itemsV.updater[Either[String, Option[Int]]] {
+              (lst, storageId) =>
+                lst.updated(idx, lst(idx).copy(storageId = storageId))
             }
           ).some
       )
@@ -382,7 +403,7 @@ object ItemAddBulkView:
     val removeRowCell = td(
       button(
         typ := "button",
-        onClick --> itemsVar.updater { (lst, _) =>
+        onClick --> itemsV.updater { (lst, _) =>
           lst.zipWithIndex.collect { case (item, i) if i != idx => item }
         },
         "Remove",
