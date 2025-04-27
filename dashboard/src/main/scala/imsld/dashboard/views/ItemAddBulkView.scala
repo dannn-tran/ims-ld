@@ -15,11 +15,6 @@ import org.scalajs.dom.HTMLDivElement
 import imsld.dashboard.LogLevel
 import imsld.dashboard.constants.BACKEND_ENDPOINT
 import imsld.dashboard.utils.ItemDtoFlat
-import imsld.dashboard.utils.ItemDtoFlat.{
-  acquirePriceCurrencyInput,
-  acquirePriceValueInput,
-  ccyDataList
-}
 import imsld.model.{
   InsertedRowWithId,
   ItemNew,
@@ -27,6 +22,10 @@ import imsld.model.{
   PagedResponse,
   StorageSlim
 }
+import imsld.dashboard.constants.CCY_OPTIONS
+import imsld.dashboard.utils.BigDecimalFormatter
+import scala.util.Try
+import imsld.dashboard.utils.FetchStorages
 
 object ItemAddBulkView:
   given Encoder[ItemNew] = Encoder.derived
@@ -44,17 +43,7 @@ object ItemAddBulkView:
   )
 
   private val itemsVar: Var[List[ItemDtoFlat]] = Var(List(ItemDtoFlat()))
-  private val storagesFetchStream
-      : EventStream[Either[Throwable, PagedResponse[StorageSlim]]] =
-    FetchStream
-      .get(s"$BACKEND_ENDPOINT/storages")
-      .recoverToEither
-      .map(
-        _.fold(
-          err => Left(err),
-          decode[PagedResponse[StorageSlim]]
-        )
-      )
+  private val storagesFetchStream = FetchStorages.stream
   private val storagesVar: Var[List[StorageSlim]] = Var(List.empty)
 
   private val submitBus: EventBus[ValidatedNec[String, List[ItemNew]]] =
@@ -268,26 +257,49 @@ object ItemAddBulkView:
         children <-- inflightSubmitOrResolvedRightSignal.splitBoolean(
           _ => List.empty,
           _ =>
+            val lastGoodPriceValue: Var[String] = Var("")
             List(
-              acquirePriceCurrencyInput(
-                itemS = signal,
-                updater = itemsVar
-                  .updater { (lst, ccy) =>
-                    lst.updated(
-                      idx,
-                      lst(idx).copy(acquirePriceCurrency = ccy)
-                    )
-                  }
+              input(
+                cls := "acquirePriceCurrency-input",
+                placeholder := "ccy",
+                controlled(
+                  value <-- signal.map(_.acquirePriceCurrency.getOrElse("")),
+                  onInput.mapToValue --> itemsVar
+                    .updater[String] { (lst, ccy) =>
+                      lst.updated(
+                        idx,
+                        lst(idx).copy(acquirePriceCurrency = ccy.some)
+                      )
+                    }
+                ),
+                listId := "defaultCurrencies",
+                size := 8
               ),
-              ccyDataList,
-              acquirePriceValueInput(
-                itemS = signal,
-                updater = itemsVar.updater { (lst, v) =>
+              dataList(
+                idAttr := "defaultCurrencies",
+                CCY_OPTIONS.map { ccy =>
+                  option(value := ccy)
+                }
+              ),
+              input(
+                placeholder := "value",
+                controlled(
+                  value <-- lastGoodPriceValue.signal,
+                  onInput.mapToValue --> lastGoodPriceValue.writer
+                ),
+                lastGoodPriceValue.signal.map { str =>
+                  Try(BigDecimal(str.filter(_ != ','))).toOption
+                } --> itemsVar.updater[Option[BigDecimal]] { (lst, v) =>
                   lst.updated(
                     idx,
                     lst(idx).copy(acquirePriceValue = v)
                   )
-                }
+                },
+                signal.map(_.acquirePriceValue) --> lastGoodPriceValue
+                  .updater[Option[BigDecimal]] { (prev, opt) =>
+                    opt.fold(prev)(BigDecimalFormatter.format)
+                  },
+                size := 16
               )
             )
         ),

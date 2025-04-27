@@ -9,7 +9,6 @@ import cats.data.{NonEmptyChain, Validated, ValidatedNec}
 import cats.syntax.all.*
 import com.raquo.laminar.api.L.*
 
-import imsld.dashboard.constants.CCY_OPTIONS
 import imsld.model.{ItemNew, MonetaryAmount}
 
 final case class ItemDtoFlat(
@@ -49,26 +48,6 @@ final case class ItemDtoFlat(
     )
 
 object ItemDtoFlat:
-  def acquirePriceCurrencyInput(
-      itemS: Signal[ItemDtoFlat],
-      updater: Observer[Option[String]]
-  ) =
-    input(
-      cls := "acquirePriceCurrency-input",
-      placeholder := "ccy",
-      controlled(
-        value <-- itemS.map(_.acquirePriceCurrency.getOrElse("")),
-        onInput.mapToValue.map(Option.apply) --> updater
-      ),
-      listId := "defaultCurrencies",
-      size := 8
-    )
-  val ccyDataList = dataList(
-    idAttr := "defaultCurrencies",
-    CCY_OPTIONS.map { ccy =>
-      option(value := ccy)
-    }
-  )
   def acquirePriceValueInput(
       itemS: Signal[ItemDtoFlat],
       updater: Observer[Option[BigDecimal]]

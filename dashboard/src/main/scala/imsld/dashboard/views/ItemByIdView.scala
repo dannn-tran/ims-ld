@@ -14,12 +14,12 @@ import imsld.dashboard.constants.BACKEND_ENDPOINT
 import imsld.dashboard.implicits.HeadersImplicit
 import imsld.dashboard.pages.ItemByIdPage
 import imsld.dashboard.utils.ItemDtoFlat
-import imsld.dashboard.utils.ItemDtoFlat.{
-  acquirePriceCurrencyInput,
-  acquirePriceValueInput,
-  ccyDataList
-}
 import imsld.model.Item
+import imsld.dashboard.constants.CCY_OPTIONS
+import scala.util.Try
+import imsld.dashboard.utils.BigDecimalFormatter
+import imsld.model.StorageSlim
+import imsld.dashboard.utils.FetchStorages
 
 object ItemByIdView {
   private type ResponseT = HttpResponse.Ok[Throwable, Item] |
@@ -142,53 +142,164 @@ object ItemByIdView {
         .handleCase[(Option[Item], Option[ItemDtoFlat]), ItemDtoFlat, List[
           ReactiveHtmlElement[HTMLElement]
         ]] { case (_, Some(item)) => item } { (_, signal) =>
-          val editSlugDiv = div(
-            label(forId := "slug-input", "Slug"),
-            input(
-              idAttr := "slug-input",
-              controlled(
-                value <-- signal.map(_.slug.getOrElse("")),
-                onInput.mapToValue --> editedItemV.updater[String] {
-                  (opt, slug) =>
-                    opt.map(_.copy(slug = slug.some))
-                }
-              )
-            )
-          )
-          val editAcquireDateDiv = div(
-            label(forId := "acquireDate-input", "Acquire date"),
-            input(
-              idAttr := "acquireDate-input",
-              controlled(
-                value <-- signal.map(_.acquireDate.getOrElse("")),
-                onInput.mapToValue --> editedItemV.updater[String] {
-                  (opt, acquireDate) =>
-                    opt.map(_.copy(acquireDate = acquireDate.some))
-                }
-              )
-            )
-          )
-          val editAcquirePriceDiv =
+          val editSlugDiv =
+            val inputId = "slug-input"
             div(
-              acquirePriceCurrencyInput(
-                itemS = signal,
-                updater = editedItemV.updater { (item, ccy) =>
-                  item.map(_.copy(acquirePriceCurrency = ccy))
+              label(forId := inputId, "Slug"),
+              input(
+                idAttr := inputId,
+                controlled(
+                  value <-- signal.map(_.slug.getOrElse("")),
+                  onInput.mapToValue --> editedItemV.updater[String] {
+                    (opt, slug) =>
+                      opt.map(_.copy(slug = slug.some))
+                  }
+                )
+              )
+            )
+          val editAcquireDateDiv =
+            val inputId = "acquireDate-input"
+            div(
+              label(forId := inputId, "Acquire date"),
+              input(
+                idAttr := inputId,
+                controlled(
+                  value <-- signal.map(_.acquireDate.getOrElse("")),
+                  onInput.mapToValue --> editedItemV.updater[String] {
+                    (opt, acquireDate) =>
+                      opt.map(_.copy(acquireDate = acquireDate.some))
+                  }
+                )
+              )
+            )
+          val editAcquirePriceDiv =
+            val lastGoodPriceValue: Var[String] = Var("")
+            div(
+              input(
+                cls := "acquirePriceCurrency-input",
+                placeholder := "ccy",
+                controlled(
+                  value <-- signal.map(_.acquirePriceCurrency.getOrElse("")),
+                  onInput.mapToValue.map(Option.apply) --> editedItemV
+                    .updater[Option[String]] { (item, ccy) =>
+                      item.map(_.copy(acquirePriceCurrency = ccy))
+                    }
+                ),
+                listId := "defaultCurrencies",
+                size := 8
+              ),
+              dataList(
+                idAttr := "defaultCurrencies",
+                CCY_OPTIONS.map { ccy =>
+                  option(value := ccy)
                 }
               ),
-              ccyDataList,
-              acquirePriceValueInput(
-                itemS = signal,
-                updater = editedItemV.updater { (item, v) =>
+              input(
+                placeholder := "value",
+                controlled(
+                  value <-- lastGoodPriceValue.signal,
+                  onInput.mapToValue --> lastGoodPriceValue.writer
+                ),
+                lastGoodPriceValue.signal.map { str =>
+                  Try(BigDecimal(str.filter(_ != ','))).toOption
+                } --> editedItemV.updater[Option[BigDecimal]] { (item, v) =>
                   item.map(_.copy(acquirePriceValue = v))
-                }
+                },
+                signal.map(_.acquirePriceValue) --> lastGoodPriceValue
+                  .updater[Option[BigDecimal]] { (prev, opt) =>
+                    opt.fold(prev)(BigDecimalFormatter.format)
+                  },
+                size := 16
               )
+            )
+          val editAcquireSourceDiv =
+            val textAreaId = "acquireSource-textARea"
+            div(
+              label(forId := textAreaId, "Acquire source"),
+              textArea(
+                idAttr := textAreaId,
+                controlled(
+                  value <-- signal.map(_.acquireSource.getOrElse("")),
+                  onInput.mapToValue --> editedItemV.updater[String] {
+                    (opt, acquireSource) =>
+                      opt.map(_.copy(acquireSource = acquireSource.some))
+                  }
+                )
+              )
+            )
+          val editDetailsDiv =
+            val textAreaId = "details-textArea"
+            div(
+              label(forId := textAreaId, "Details"),
+              textArea(
+                idAttr := textAreaId,
+                controlled(
+                  value <-- signal.map(_.details.getOrElse("")),
+                  onInput.mapToValue --> editedItemV.updater[String] {
+                    (opt, details) => opt.map(_.copy(details = details.some))
+                  }
+                )
+              )
+            )
+          val storageIdDiv =
+            val storagesFetchStream = FetchStorages.stream
+            val storageIdInputBus: EventBus[Either[String, Option[Int]]] =
+              new EventBus
+            val errS = (storagesFetchStream
+              .collect {
+                case Left(err) =>
+                  s"Unable to fetch storages from server. Error: $err".some
+                case _ => None
+              }
+              mergeWith
+                storageIdInputBus.events.collect {
+                  case Left(err) =>
+                    s"Error encountered while updating storage_id: $err".some
+                  case _ => None
+                })
+              .startWith(None)
+
+            val selectId = "storage-select"
+
+            div(
+              label(forId := selectId, "Storage"),
+              select(
+                idAttr := selectId,
+                option(value := "", "Choose storage location..."),
+                children <-- storagesFetchStream
+                  .collect { case Right(resp) =>
+                    resp.data
+                  }
+                  .map { lst =>
+                    lst.map { s => option(value := s.id.toString(), s.label) }
+                  },
+                value <-- signal.map(_.storageId.fold("")(_.toString())),
+                onInput.mapToValue.map[Either[String, Option[Int]]] { x =>
+                  if (x.isEmpty()) Right(None)
+                  else
+                    x.toIntOption match
+                      case None        => Left("Invalid storage_id: " + x)
+                      case Some(value) => Right(value.some)
+                } --> storageIdInputBus.writer,
+                storageIdInputBus.events.collect {
+                  case Right(value) => value
+                  case Left(_)      => None
+                } --> editedItemV.updater[Option[Int]] { (opt, storageId) =>
+                  opt.map(_.copy(storageId = storageId))
+                }
+              ),
+              child.maybe <-- errS.splitOption { (_, signal) =>
+                p(text <-- signal, cls := "error")
+              }
             )
 
           List(
             editSlugDiv,
             editAcquireDateDiv,
-            editAcquirePriceDiv
+            editAcquirePriceDiv,
+            editAcquireSourceDiv,
+            editDetailsDiv,
+            storageIdDiv
           )
         }
         .toSignal
