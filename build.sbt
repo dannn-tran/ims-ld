@@ -46,7 +46,10 @@ lazy val api = project
       "org.typelevel" %% "munit-cats-effect" % MunitCatsEffectVersion % Test,
       "ch.qos.logback" % "logback-classic" % LogbackVersion % Runtime
     ),
-    Compile / mainClass := Some("imsld.api.Main")
+    Compile / mainClass := Some("imsld.api.Main"),
+    ThisBuild / scalacOptions ++= Seq(
+      "-Xmax-inlines:64"
+    )
   )
   .dependsOn(core.jvm)
 

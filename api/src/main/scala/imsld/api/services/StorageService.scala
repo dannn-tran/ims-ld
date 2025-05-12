@@ -18,22 +18,38 @@ import imsld.model.{
   StoragePartial,
   StorageSlim
 }
+import imsld.model.StorageUpdated
+import skunk.Command
 
-given PgStatementProvider[Storage, StorageNew, StoragePartial, StorageSlim] =
+given PgStatementProvider[
+  Storage,
+  StoragePartial,
+  StorageSlim,
+  StorageNew,
+  StorageUpdated
+] =
   StorageService
 
 final case class StorageService[F[_]: Sync](
     pgSessionPool: Resource[F, Session[F]]
-) extends ServiceBase[F, Storage, StorageNew, StoragePartial, StorageSlim](
+) extends ServiceBase[
+      F,
+      Storage,
+      StoragePartial,
+      StorageSlim,
+      StorageNew,
+      StorageUpdated
+    ](
       pgSessionPool
     )
 
 object StorageService
     extends PgStatementProvider[
       Storage,
-      StorageNew,
       StoragePartial,
-      StorageSlim
+      StorageSlim,
+      StorageNew,
+      StorageUpdated
     ]:
   val storageNewEnc: Encoder[StorageNew] =
     (varchar(64).opt *: text.opt *: text.opt)
@@ -130,3 +146,30 @@ object StorageService
           items
         )
       }
+
+  private val storageUpdatedEnc: Encoder[StorageUpdated] =
+    (
+      int4
+        *: varchar(64).opt
+        *: text.opt
+        *: text.opt
+    ).contramap[StorageUpdated] { s =>
+      (
+        s.id,
+        s.slug,
+        s.label,
+        s.description
+      )
+    }
+  def updateManyCmd(n: Int): Command[List[StorageUpdated]] =
+    sql"""
+      UPDATE storages AS s
+      SET
+        s.slug = u.slug,
+        s.label = u.label,
+        s.description = u.description
+      FROM ( VALUES
+        ${storageUpdatedEnc.values.list(n)}
+      ) AS u(id, slug, label, description)
+       WHERE s.id = u.id
+    """".command

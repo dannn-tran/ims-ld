@@ -10,10 +10,12 @@ import imsld.model.{
   PagingRequest,
   PagingResponse
 }
+import skunk.Command
+import skunk.data.Completion
 
-abstract class ServiceBase[F[_]: Sync, T, TNew, TPartial, TSlim](
+abstract class ServiceBase[F[_]: Sync, T, TPartial, TSlim, TNew, TUpdated](
     pgSessionPool: Resource[F, Session[F]]
-)(implicit companion: PgStatementProvider[T, TNew, TPartial, TSlim]):
+)(implicit companion: PgStatementProvider[T, TPartial, TSlim, TNew, TUpdated]):
   def insertMany(objs: List[TNew]): F[List[InsertedRowWithId]] =
     pgSessionPool.use { session =>
       for
@@ -68,9 +70,18 @@ abstract class ServiceBase[F[_]: Sync, T, TNew, TPartial, TSlim](
       yield obj
     }
 
-trait PgStatementProvider[T, TNew, TPartial, TSlim]:
+  def updateMany(items: List[TUpdated]): F[Completion] =
+    pgSessionPool.use { session =>
+      for
+        ps <- session.prepare(companion.updateManyCmd(items.size))
+        c <- ps.execute(items)
+      yield c
+    }
+
+trait PgStatementProvider[T, TPartial, TSlim, TNew, TUpdated]:
   def insertManyQuery(n: Int): Query[List[TNew], InsertedRowWithId]
   def getAllPartialQuery: Query[PagingRequest, TPartial]
   def getAllSlimQuery: Query[PagingRequest, TSlim]
   def getOneByIdQuery: Query[Int, T]
   def countQuery: Query[skunk.Void, Int]
+  def updateManyCmd(n: Int): Command[List[TUpdated]]

@@ -8,6 +8,7 @@ import io.circe.generic.auto.*
 import io.circe.parser.decode
 import org.scalajs.dom.{HTMLDivElement, HTMLElement}
 
+import cats.data.Validated.{Valid, Invalid}
 import imsld.dashboard.HttpResponse
 import imsld.dashboard.HttpResponse.{ServerError, UnexpectedResponse}
 import imsld.dashboard.constants.BACKEND_ENDPOINT
@@ -20,14 +21,39 @@ import scala.util.Try
 import imsld.dashboard.utils.BigDecimalFormatter
 import imsld.model.StorageSlim
 import imsld.dashboard.utils.FetchStorages
+import imsld.model.ItemNew
+import io.circe.Encoder
+import io.circe.syntax.*
 
 object ItemByIdView {
+  given Encoder[ItemNew] = Encoder.derived
+
   private type ResponseT = HttpResponse.Ok[Throwable, Item] |
     HttpResponse.NotFound.type | HttpResponse.ServerError |
     HttpResponse.UnexpectedResponse
 
   private val fetchedItemV: Var[Option[Item]] = Var(None)
-  private val editedItemV: Var[Option[ItemDtoFlat]] = Var(None)
+  private val editedItemV: Var[Option[(Int, ItemDtoFlat)]] = Var(None)
+  private val editedItemValidatedV
+      : Var[Either[List[String], Option[(Int, ItemNew)]]] =
+    Var(Right(None))
+
+  private val submitBus: EventBus[Unit] = new EventBus
+  private val respS =
+    submitBus.events
+      .mapTo(editedItemValidatedV.now())
+      .collect { case Right(Some(item)) =>
+        item
+      }
+      .flatMapWithStatus { (id, dto) =>
+        FetchStream.put(
+          s"$BACKEND_ENDPOINT/items/$id",
+          options =>
+            options.body(
+              dto.asJson.noSpaces
+            )
+        )
+      }
 
   def apply(pageS: Signal[ItemByIdPage]): ReactiveHtmlElement[HTMLDivElement] =
     val fetchItemS: Signal[Status[ItemByIdPage, Either[Throwable, ResponseT]]] =
@@ -56,6 +82,13 @@ object ItemByIdView {
           }
         }
       ),
+      editedItemV.signal.map { item =>
+        item.map { (id, item) => (id, item.validate) } match {
+          case None                       => Right(None)
+          case Some((_, Invalid(errors))) => Left(errors.toList)
+          case Some((id, Valid(item)))    => Right((id, item).some)
+        }
+      } --> editedItemValidatedV.writer,
       child.maybe <-- fetchItemStatusS.splitOption { (_, signal) =>
         p(
           text <-- signal.map { (_, txt) => txt },
@@ -85,17 +118,26 @@ object ItemByIdView {
               case (Some(_), _) => None
               case (None, item) =>
                 item.apply().map { item =>
-                  ItemDtoFlat(
-                    slug = item.slug,
-                    label = item.label,
-                    acquireDate = item.acquireDate,
-                    acquirePriceCurrency = item.acquirePrice.map(_.currency),
-                    acquirePriceValue = item.acquirePrice.map(_.value).asRight,
-                    details = item.details,
-                    storageId = item.storage.map(_.id).asRight
+                  (
+                    item.id,
+                    ItemDtoFlat(
+                      slug = item.slug,
+                      label = item.label,
+                      acquireDate = item.acquireDate,
+                      acquirePriceCurrency = item.acquirePrice.map(_.currency),
+                      acquirePriceValue =
+                        item.acquirePrice.map(_.value).asRight,
+                      details = item.details,
+                      storageId = item.storage.map(_.id).asRight
+                    )
                   )
                 }
             }
+        ),
+        button(
+          typ := "submit",
+          onClick.preventDefault.mapToUnit --> submitBus.writer,
+          disabled <-- editedItemValidatedV.signal.map(_.isLeft)
         )
       ),
       child.maybe <-- fetchedItemV.signal.splitOption { (_, signal) =>
@@ -144,7 +186,9 @@ object ItemByIdView {
                   value <-- signal.map(_.slug.getOrElse("")),
                   onInput.mapToValue --> editedItemV.updater[String] {
                     (opt, slug) =>
-                      opt.map(_.copy(slug = slug.some))
+                      opt.map { (id, item) =>
+                        (id, item.copy(slug = slug.some))
+                      }
                   }
                 )
               )
@@ -159,7 +203,9 @@ object ItemByIdView {
                   value <-- signal.map(_.acquireDate.getOrElse("")),
                   onInput.mapToValue --> editedItemV.updater[String] {
                     (opt, acquireDate) =>
-                      opt.map(_.copy(acquireDate = acquireDate.some))
+                      opt.map { (id, item) =>
+                        (id, item.copy(acquireDate = acquireDate.some))
+                      }
                   }
                 )
               )
@@ -174,7 +220,9 @@ object ItemByIdView {
                   value <-- signal.map(_.acquirePriceCurrency.getOrElse("")),
                   onInput.mapToValue.map(Option.apply) --> editedItemV
                     .updater[Option[String]] { (item, ccy) =>
-                      item.map(_.copy(acquirePriceCurrency = ccy))
+                      item.map { (id, item) =>
+                        (id, item.copy(acquirePriceCurrency = ccy))
+                      }
                     }
                 ),
                 listId := "defaultCurrencies",
@@ -201,7 +249,9 @@ object ItemByIdView {
                     )
                 } --> editedItemV.updater[Either[String, Option[BigDecimal]]] {
                   (item, v) =>
-                    item.map(_.copy(acquirePriceValue = v))
+                    item.map { (id, item) =>
+                      (id, item.copy(acquirePriceValue = v))
+                    }
                 },
                 signal.map(_.acquirePriceValue) --> lastGoodPriceValue
                   .updater[Either[String, Option[BigDecimal]]] { (prev, v) =>
@@ -210,7 +260,8 @@ object ItemByIdView {
                       case _               => prev
                     }
                   },
-                size := 16
+                size := 16,
+                cls("error") <-- signal.map(_.acquirePriceValue.isLeft)
               )
             )
           val editAcquireSourceDiv =
@@ -223,7 +274,9 @@ object ItemByIdView {
                   value <-- signal.map(_.acquireSource.getOrElse("")),
                   onInput.mapToValue --> editedItemV.updater[String] {
                     (opt, acquireSource) =>
-                      opt.map(_.copy(acquireSource = acquireSource.some))
+                      opt.map { (id, item) =>
+                        (id, item.copy(acquireSource = acquireSource.some))
+                      }
                   }
                 )
               )
@@ -237,7 +290,10 @@ object ItemByIdView {
                 controlled(
                   value <-- signal.map(_.details.getOrElse("")),
                   onInput.mapToValue --> editedItemV.updater[String] {
-                    (opt, details) => opt.map(_.copy(details = details.some))
+                    (opt, details) =>
+                      opt.map { (id, item) =>
+                        (id, item.copy(details = details.some))
+                      }
                   }
                 )
               )
@@ -246,19 +302,6 @@ object ItemByIdView {
             val storagesFetchStream = FetchStorages.stream
             val storageIdInputBus: EventBus[Either[String, Option[Int]]] =
               new EventBus
-            val errS = (storagesFetchStream
-              .collect {
-                case Left(err) =>
-                  s"Unable to fetch storages from server. Error: $err".some
-                case _ => None
-              }
-              mergeWith
-                storageIdInputBus.events.collect {
-                  case Left(err) =>
-                    s"Error encountered while updating storage_id: $err".some
-                  case _ => None
-                })
-              .startWith(None)
 
             val selectId = "storage-select"
 
@@ -286,12 +329,29 @@ object ItemByIdView {
                       case Some(value) => Right(value.some)
                 } --> editedItemV.updater[Either[String, Option[Int]]] {
                   (opt, storageId) =>
-                    opt.map(_.copy(storageId = storageId))
+                    opt.map { (id, item) =>
+                      (id, item.copy(storageId = storageId))
+                    }
                 }
               ),
-              child.maybe <-- errS.splitOption { (_, signal) =>
-                p(text <-- signal, cls := "error")
-              }
+              child.maybe <-- storagesFetchStream
+                .collect {
+                  case Left(err) =>
+                    s"Unable to fetch storages from server. Error: $err".some
+                  case _ => None
+                }
+                .splitOption { (_, signal) =>
+                  p(text <-- signal, cls := "error")
+                },
+              child.maybe <-- storageIdInputBus.events
+                .collect {
+                  case Left(err) =>
+                    s"Error encountered while updating storage_id: $err".some
+                  case _ => None
+                }
+                .splitOption { (_, signal) =>
+                  p(text <-- signal, cls := "error")
+                }
             )
 
           List(

@@ -27,3 +27,10 @@ final case class StorageSlim(
     slug: Option[String],
     label: Option[String]
 )
+
+final case class StorageUpdated(
+    id: Int,
+    slug: Option[String],
+    label: Option[String],
+    description: Option[String]
+) extends WithId

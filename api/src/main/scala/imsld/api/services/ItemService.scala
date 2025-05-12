@@ -17,15 +17,26 @@ import imsld.model.{
   PagingRequest,
   StorageSlim
 }
+import imsld.model.ItemUpdated
+import skunk.Command
 
-given PgStatementProvider[Item, ItemNew, ItemPartial, ItemSlim] = ItemService
+given PgStatementProvider[Item, ItemPartial, ItemSlim, ItemNew, ItemUpdated] =
+  ItemService
 
 final case class ItemService[F[_]: Sync](
     pgSessionPool: Resource[F, Session[F]]
-) extends ServiceBase[F, Item, ItemNew, ItemPartial, ItemSlim](pgSessionPool)
+) extends ServiceBase[F, Item, ItemPartial, ItemSlim, ItemNew, ItemUpdated](
+      pgSessionPool
+    )
 
 object ItemService
-    extends PgStatementProvider[Item, ItemNew, ItemPartial, ItemSlim]:
+    extends PgStatementProvider[
+      Item,
+      ItemPartial,
+      ItemSlim,
+      ItemNew,
+      ItemUpdated
+    ]:
   val monetary_amount: Codec[MonetaryAmount] = CompositeTypeCodec
     .mkComposite(
       varchar(3) *: numeric(9, 2),
@@ -33,7 +44,7 @@ object ItemService
     )
     .imap(MonetaryAmount.apply)(a => a.currency -> a.value)
 
-  val itemNewEnc: Encoder[ItemNew] =
+  private val itemNewEnc: Encoder[ItemNew] =
     (
       varchar(64).opt
         *: text.opt
@@ -71,7 +82,9 @@ object ItemService
 
   val getAllPartialQuery: Query[PagingRequest, ItemPartial] =
     sql"""
-      SELECT i.id, i.slug, i.label, i.acquire_date, i.acquire_price, i.acquire_source, s.id, s.slug, s.label, i.details
+      SELECT
+        i.id, i.slug, i.label, i.publish_date, i.acquire_date, i.acquire_price,
+        i.acquire_source, s.id, s.slug, s.label, i.details
       FROM items i
       LEFT JOIN storages s
       ON i.storage_id = s.id
@@ -83,6 +96,7 @@ object ItemService
         int4
           *: varchar(64).opt
           *: text.opt
+          *: varchar(10).opt
           *: varchar(10).opt
           *: monetary_amount.opt
           *: text.opt
@@ -96,6 +110,7 @@ object ItemService
             id,
             slug,
             label,
+            publishDate,
             acquireDate,
             acquirePrice,
             acquireSource,
@@ -108,6 +123,7 @@ object ItemService
             id,
             slug,
             label,
+            publishDate,
             acquireDate,
             acquirePrice,
             acquireSource,
@@ -133,7 +149,9 @@ object ItemService
 
   val getOneByIdQuery: Query[Int, Item] =
     sql"""
-      SELECT i.id, i.slug, i.label, i.acquire_date, i.acquire_price, i.acquire_source, i.storage_id, s.slug, s.label, i.details
+      SELECT 
+        i.id, i.slug, i.label, i.publish_date, i.acquire_date, i.acquire_price, 
+        i.acquire_source, i.storage_id, s.slug, s.label, i.details
       FROM items i
       LEFT JOIN storages s
       ON i.storage_id = s.id
@@ -143,6 +161,7 @@ object ItemService
         int4 // i.id
           *: varchar(64).opt // i.slug
           *: text.opt // i.label
+          *: varchar(10).opt // i.publish_date
           *: varchar(10).opt // i.acquire_date
           *: monetary_amount.opt // i.acquire_price
           *: text.opt // i.acquire_source
@@ -156,6 +175,7 @@ object ItemService
               id,
               slug,
               label,
+              publishDate,
               acquireDate,
               acquirePrice,
               acquireSource,
@@ -168,6 +188,7 @@ object ItemService
             id,
             slug,
             label,
+            publishDate,
             acquireDate,
             acquirePrice,
             acquireSource,
@@ -179,3 +200,44 @@ object ItemService
             List.empty
           )
       }
+
+  private val itemUpdatedEnc: Encoder[ItemUpdated] = (
+    int4
+      *: varchar(64).opt
+      *: text.opt
+      *: varchar(10).opt
+      *: varchar(10).opt
+      *: monetary_amount.opt
+      *: text.opt
+      *: int4.opt
+      *: text.opt
+  ).contramap[ItemUpdated] { item =>
+    (
+      item.id,
+      item.slug,
+      item.label,
+      item.publishDate,
+      item.acquireDate,
+      item.acquirePrice,
+      item.acquireSource,
+      item.storageId,
+      item.details
+    )
+  }
+  def updateManyCmd(n: Int): Command[List[ItemUpdated]] =
+    sql"""
+      UPDATE items AS i
+      SET
+        i.slug = u.slug,
+        label = u.label,
+        publish_date = u.publish_date,
+        acquire_date = u.acquire_date,
+        acquire_price = u.acquire_price,
+        acquire_source = u.acquire_source,
+        storage_id = u.storage_id,
+        details = u.details
+      FROM ( VALUES
+        ${itemUpdatedEnc.values.list(n)}
+      ) AS u(id, slug, label, publish_date, acquire_date, acquire_price, acquire_source, storage_id, details)
+      WHERE i.id = u.id
+    """.command
