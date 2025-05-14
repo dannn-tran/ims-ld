@@ -16,19 +16,17 @@ import imsld.model.PagingRequest
 abstract class RouterBase[
     F[_]: Concurrent,
     T,
-    TSlim,
-    TNew,
     TPartial,
-    TUpdated,
-    Service <: ServiceBase[F, T, TPartial, TSlim, TNew, TUpdated]
+    TSlim,
+    TPut,
+    Service <: ServiceBase[F, T, TPartial, TSlim, TPut]
 ](
     service: Service
 )(using
     circe.Encoder[T],
     circe.Encoder[TPartial],
     circe.Encoder[TSlim],
-    circe.Decoder[TNew],
-    circe.Decoder[TUpdated]
+    circe.Decoder[TPut]
 ) extends Http4sDsl[F] {
   def routes: HttpRoutes[F] =
     HttpRoutes.of[F](customRouteHandler `orElse` defaultRouteHandler)
@@ -62,7 +60,7 @@ abstract class RouterBase[
 
     case req @ POST -> Root =>
       req
-        .attemptAs[List[TNew]]
+        .attemptAs[List[TPut]]
         .foldF(
           err => BadRequest(err.toString),
           docs =>
@@ -72,14 +70,14 @@ abstract class RouterBase[
             yield resp
         )
 
-    case req @ PATCH -> Root =>
+    case req @ PUT -> Root / IntVar(id) =>
       req
-        .attemptAs[List[TUpdated]]
+        .attemptAs[TPut]
         .foldF(
           err => BadRequest(err.toString),
-          docs =>
+          doc =>
             for
-              _ <- service.updateMany(docs)
+              _ <- service.updateOne(id, doc)
               resp <- Ok()
             yield resp
         )

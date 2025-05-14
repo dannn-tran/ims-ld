@@ -10,14 +10,13 @@ import org.scalajs.dom.HTMLDivElement
 
 import imsld.dashboard.HttpResponse.UnexpectedResponse
 import imsld.dashboard.constants.BACKEND_ENDPOINT
-import imsld.dashboard.implicits.HeadersImplicit
 import imsld.dashboard.pages.ItemByIdPage
 import imsld.dashboard.{HttpResponse, JsRouter}
 import imsld.model.{ItemPartial, PagedResponse}
 
 object ItemViewAllView:
   private type ResponseT =
-    HttpResponse.Ok[Throwable, PagedResponse[ItemPartial]] |
+    HttpResponse.Ok[Either[Throwable, PagedResponse[ItemPartial]]] |
       HttpResponse.ServerError | HttpResponse.UnexpectedResponse
 
   private val COLUMN_HEADERS: List[String] = List(
@@ -91,17 +90,7 @@ object ItemViewAllView:
             .map[ResponseT](
               decode[PagedResponse[ItemPartial]] `andThen` HttpResponse.Ok.apply
             )
-        case resp =>
-          EventStream
-            .fromJsPromise(resp.text())
-            .map { body =>
-              HttpResponse
-                .UnexpectedResponse(
-                  resp.headers.toMap,
-                  resp.status,
-                  body
-                )
-            }
+        case resp => HttpResponse.mkUnexpectedResponse(resp)
       })
       .get(s"$BACKEND_ENDPOINT/items?detail=partial")
       .recoverToEither
@@ -115,7 +104,7 @@ object ItemViewAllView:
     }),
     td(item.details),
     td(item.storage.map(_.label)),
-    td(a("View item", JsRouter.navigateTo(ItemByIdPage(item.id))))
+    td(a("View item", JsRouter.navigateTo(ItemByIdPage(item.id), true)))
   )
 
   private def ceilDiv(a: Int, b: Int): Int = a / b + (if (a % b == 0) 0 else 1)

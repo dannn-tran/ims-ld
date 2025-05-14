@@ -10,22 +10,21 @@ import skunk.{Codec, Encoder, Query, Session}
 import imsld.model.{
   InsertedRowWithId,
   Item,
-  ItemNew,
+  ItemPut,
   ItemPartial,
   ItemSlim,
   MonetaryAmount,
   PagingRequest,
   StorageSlim
 }
-import imsld.model.ItemUpdated
 import skunk.Command
 
-given PgStatementProvider[Item, ItemPartial, ItemSlim, ItemNew, ItemUpdated] =
+given PgStatementProvider[Item, ItemPartial, ItemSlim, ItemPut] =
   ItemService
 
 final case class ItemService[F[_]: Sync](
     pgSessionPool: Resource[F, Session[F]]
-) extends ServiceBase[F, Item, ItemPartial, ItemSlim, ItemNew, ItemUpdated](
+) extends ServiceBase[F, Item, ItemPartial, ItemSlim, ItemPut](
       pgSessionPool
     )
 
@@ -34,8 +33,7 @@ object ItemService
       Item,
       ItemPartial,
       ItemSlim,
-      ItemNew,
-      ItemUpdated
+      ItemPut
     ]:
   val monetary_amount: Codec[MonetaryAmount] = CompositeTypeCodec
     .mkComposite(
@@ -44,7 +42,7 @@ object ItemService
     )
     .imap(MonetaryAmount.apply)(a => a.currency -> a.value)
 
-  private val itemNewEnc: Encoder[ItemNew] =
+  private val itemNewEnc: Encoder[ItemPut] =
     (
       varchar(64).opt
         *: text.opt
@@ -66,7 +64,7 @@ object ItemService
         )
       }
 
-  def insertManyQuery(n: Int): Query[List[ItemNew], InsertedRowWithId] =
+  def insertManyQuery(n: Int): Query[List[ItemPut], InsertedRowWithId] =
     sql"""
       INSERT INTO items (slug, label, acquire_date, acquire_price, acquire_source, storage_id, details)
       VALUES ${itemNewEnc.values.list(n)}
@@ -201,43 +199,30 @@ object ItemService
           )
       }
 
-  private val itemUpdatedEnc: Encoder[ItemUpdated] = (
-    int4
-      *: varchar(64).opt
-      *: text.opt
-      *: varchar(10).opt
-      *: varchar(10).opt
-      *: monetary_amount.opt
-      *: text.opt
-      *: int4.opt
-      *: text.opt
-  ).contramap[ItemUpdated] { item =>
-    (
-      item.id,
-      item.slug,
-      item.label,
-      item.publishDate,
-      item.acquireDate,
-      item.acquirePrice,
-      item.acquireSource,
-      item.storageId,
-      item.details
-    )
-  }
-  def updateManyCmd(n: Int): Command[List[ItemUpdated]] =
+  val updateOneCmd: Command[(Int, ItemPut)] =
     sql"""
-      UPDATE items AS i
+      UPDATE items
       SET
-        i.slug = u.slug,
-        label = u.label,
-        publish_date = u.publish_date,
-        acquire_date = u.acquire_date,
-        acquire_price = u.acquire_price,
-        acquire_source = u.acquire_source,
-        storage_id = u.storage_id,
-        details = u.details
-      FROM ( VALUES
-        ${itemUpdatedEnc.values.list(n)}
-      ) AS u(id, slug, label, publish_date, acquire_date, acquire_price, acquire_source, storage_id, details)
-      WHERE i.id = u.id
+        slug = ${varchar(64).opt},
+        label = ${text.opt},
+        publish_date = ${varchar(10).opt},
+        acquire_date = ${varchar(10).opt},
+        acquire_price = ${monetary_amount.opt},
+        acquire_source = ${text.opt},
+        storage_id = ${int4.opt},
+        details = ${text.opt}
+      WHERE id = $int4
     """.command
+      .contramap[(Int, ItemPut)] { (id, item) =>
+        (
+          item.slug,
+          item.label,
+          item.publishDate,
+          item.acquireDate,
+          item.acquirePrice,
+          item.acquireSource,
+          item.storageId,
+          item.details,
+          id
+        )
+      }

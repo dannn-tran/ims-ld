@@ -16,7 +16,7 @@ import imsld.dashboard.constants.BACKEND_ENDPOINT
 import imsld.dashboard.utils.ItemDtoFlat
 import imsld.model.{
   InsertedRowWithId,
-  ItemNew,
+  ItemPut,
   MonetaryAmount,
   PagedResponse,
   StorageSlim
@@ -26,9 +26,10 @@ import imsld.dashboard.utils.BigDecimalFormatter
 import scala.util.Try
 import imsld.dashboard.utils.FetchStorages
 import cats.data.Validated.Invalid
+import imsld.dashboard.HttpResponse
 
 object ItemAddBulkView:
-  given Encoder[ItemNew] = Encoder.derived
+  given Encoder[ItemPut] = Encoder.derived
 
   private val COLUMN_HEADERS: List[String] = List(
     "slug",
@@ -51,16 +52,28 @@ object ItemAddBulkView:
 
   private val itemsV: Var[List[ItemDtoFlat]] = Var(List(ItemDtoFlat()))
   private val itemsValidatedV
-      : Var[ValidatedNec[(Int, List[String]), List[ItemNew]]] =
+      : Var[ValidatedNec[(Int, List[String]), List[ItemPut]]] =
     Var(Valid(List.empty))
 
+  private type ResponseT =
+    HttpResponse.Ok[Either[Throwable, List[InsertedRowWithId]]] |
+      HttpResponse.ServerError | HttpResponse.UnexpectedResponse
   private val respStream: EventStream[
-    Status[List[ItemNew], Either[Throwable, List[InsertedRowWithId]]]
+    Status[List[ItemPut], Either[Throwable, ResponseT]]
   ] = submitBus.events
     .mapTo(itemsValidatedV.now())
     .collect { case Valid(dto) => dto }
     .flatMapWithStatus { dto =>
       FetchStream
+        .withDecoder(HttpResponse.handleServerErrorResponse orElse {
+          case resp if resp.status == 201 =>
+            EventStream
+              .fromJsPromise(resp.text())
+              .map[ResponseT](
+                decode[List[InsertedRowWithId]] `andThen` HttpResponse.Ok.apply
+              )
+          case resp => HttpResponse.mkUnexpectedResponse(resp)
+        })
         .post(
           s"$BACKEND_ENDPOINT/items",
           options =>
@@ -69,13 +82,18 @@ object ItemAddBulkView:
             )
         )
         .recoverToEither
-        .map(_.fold(err => Left(err), decode[List[InsertedRowWithId]]))
     }
   private val respStatusS: Signal[Option[(Boolean, String)]] =
     (respStream.map {
       case Pending(_) => (true, "Submitting...").some
-      case Resolved(_, Right(resp), _) =>
-        (true, s"New items created successfully. IDs: ${resp.map(_.id)}").some
+      case Resolved(_, Right(HttpResponse.Ok(Right(lst))), _) =>
+        (true, s"New items created successfully. IDs: ${lst.map(_.id)}").some
+      case Resolved(_, Right(HttpResponse.Ok(Left(err))), _) =>
+        (false, s"Fail to parse 200 response. Error: $err").some
+      case Resolved(_, Right(err: HttpResponse.ServerError), _) =>
+        (false, s"Server error: $err").some
+      case Resolved(_, Right(err: HttpResponse.UnexpectedResponse), _) =>
+        (false, s"Unexpected response: $err").some
       case Resolved(_, Left(err), _) =>
         (false, s"Failed to create new items. Error: $err").some
     } mergeWith clearDataBus.events.mapTo(None)).startWith(None)
@@ -98,7 +116,7 @@ object ItemAddBulkView:
       clearDataBus.events.mapTo(List.empty) --> itemsV.writer,
       itemsV.signal.map { items =>
         items.zipWithIndex
-          .foldLeft[ValidatedNec[(Int, List[String]), List[ItemNew]]](
+          .foldLeft[ValidatedNec[(Int, List[String]), List[ItemPut]]](
             Valid(List.empty)
           ) { case (acc, (item, i)) =>
             (

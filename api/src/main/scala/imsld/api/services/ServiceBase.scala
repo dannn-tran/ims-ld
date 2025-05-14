@@ -13,10 +13,10 @@ import imsld.model.{
 import skunk.Command
 import skunk.data.Completion
 
-abstract class ServiceBase[F[_]: Sync, T, TPartial, TSlim, TNew, TUpdated](
+abstract class ServiceBase[F[_]: Sync, T, TPartial, TSlim, TPut](
     pgSessionPool: Resource[F, Session[F]]
-)(implicit companion: PgStatementProvider[T, TPartial, TSlim, TNew, TUpdated]):
-  def insertMany(objs: List[TNew]): F[List[InsertedRowWithId]] =
+)(implicit companion: PgStatementProvider[T, TPartial, TSlim, TPut]):
+  def insertMany(objs: List[TPut]): F[List[InsertedRowWithId]] =
     pgSessionPool.use { session =>
       for
         query <- session.prepare(companion.insertManyQuery(objs.length))
@@ -70,18 +70,18 @@ abstract class ServiceBase[F[_]: Sync, T, TPartial, TSlim, TNew, TUpdated](
       yield obj
     }
 
-  def updateMany(items: List[TUpdated]): F[Completion] =
+  def updateOne(id: Int, item: TPut): F[Completion] =
     pgSessionPool.use { session =>
       for
-        ps <- session.prepare(companion.updateManyCmd(items.size))
-        c <- ps.execute(items)
+        ps <- session.prepare(companion.updateOneCmd)
+        c <- ps.execute((id, item))
       yield c
     }
 
-trait PgStatementProvider[T, TPartial, TSlim, TNew, TUpdated]:
-  def insertManyQuery(n: Int): Query[List[TNew], InsertedRowWithId]
+trait PgStatementProvider[T, TPartial, TSlim, TPut]:
+  def insertManyQuery(n: Int): Query[List[TPut], InsertedRowWithId]
   def getAllPartialQuery: Query[PagingRequest, TPartial]
   def getAllSlimQuery: Query[PagingRequest, TSlim]
   def getOneByIdQuery: Query[Int, T]
   def countQuery: Query[skunk.Void, Int]
-  def updateManyCmd(n: Int): Command[List[TUpdated]]
+  def updateOneCmd: Command[(Int, TPut)]

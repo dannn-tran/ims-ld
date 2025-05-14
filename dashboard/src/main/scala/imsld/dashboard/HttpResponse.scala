@@ -8,7 +8,7 @@ import imsld.dashboard.implicits.HeadersImplicit
 abstract class HttpResponse(val statusCode: Int)
 
 object HttpResponse:
-  final case class Ok[L, R](body: Either[L, R]) extends HttpResponse(200)
+  final case class Ok[T](body: T) extends HttpResponse(200)
   case object Created extends HttpResponse(201)
   case object Accepted extends HttpResponse(202)
 
@@ -58,3 +58,17 @@ object HttpResponse:
         case err: ServerError                    => EventStream.fromValue(err)
         case es: EventStream[UnexpectedResponse] => es
   }
+
+  def mkUnexpectedResponse(
+      resp: dom.Response
+  ): EventStream[UnexpectedResponse] =
+    EventStream
+      .fromJsPromise(resp.text())
+      .map { body =>
+        HttpResponse
+          .UnexpectedResponse(
+            resp.headers.toMap,
+            resp.status,
+            body
+          )
+      }

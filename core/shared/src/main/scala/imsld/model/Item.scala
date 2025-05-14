@@ -32,7 +32,7 @@ final case class ItemSlim(
     label: Option[String]
 ) extends WithId
 
-final case class ItemNew(
+final case class ItemPut(
     slug: Option[String],
     label: Option[String],
     publishDate: Option[String],
@@ -42,15 +42,3 @@ final case class ItemNew(
     storageId: Option[Int],
     details: Option[String]
 )
-
-final case class ItemUpdated(
-    id: Int,
-    slug: Option[String],
-    label: Option[String],
-    publishDate: Option[String],
-    acquireDate: Option[String],
-    acquirePrice: Option[MonetaryAmount],
-    acquireSource: Option[String],
-    storageId: Option[Int],
-    details: Option[String]
-) extends WithId

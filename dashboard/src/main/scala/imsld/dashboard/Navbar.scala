@@ -10,15 +10,15 @@ object Navbar:
     navTag(
       idAttr := "navbar",
       div(
-        a("Home", JsRouter.navigateTo(HomePage))
+        a("Home", JsRouter.navigateTo(HomePage, true))
       ),
       div(
         cls := "navbar-navgroup",
         div("Items"),
         div(
           cls := "navbar-navgroup-items",
-          a("> View all", JsRouter.navigateTo(ItemViewAllPage)),
-          a("> Create bulk", JsRouter.navigateTo(ItemAddBulkPage))
+          a("> View all", JsRouter.navigateTo(ItemViewAllPage, true)),
+          a("> Create bulk", JsRouter.navigateTo(ItemAddBulkPage, true))
         )
       )
     )

@@ -14,19 +14,17 @@ import imsld.model.{
   ItemPartial,
   PagingRequest,
   Storage,
-  StorageNew,
+  StoragePut,
   StoragePartial,
   StorageSlim
 }
-import imsld.model.StorageUpdated
 import skunk.Command
 
 given PgStatementProvider[
   Storage,
   StoragePartial,
   StorageSlim,
-  StorageNew,
-  StorageUpdated
+  StoragePut
 ] =
   StorageService
 
@@ -37,8 +35,7 @@ final case class StorageService[F[_]: Sync](
       Storage,
       StoragePartial,
       StorageSlim,
-      StorageNew,
-      StorageUpdated
+      StoragePut
     ](
       pgSessionPool
     )
@@ -48,10 +45,9 @@ object StorageService
       Storage,
       StoragePartial,
       StorageSlim,
-      StorageNew,
-      StorageUpdated
+      StoragePut
     ]:
-  val storageNewEnc: Encoder[StorageNew] =
+  val storageNewEnc: Encoder[StoragePut] =
     (varchar(64).opt *: text.opt *: text.opt)
       .contramap { obj =>
         (
@@ -61,7 +57,7 @@ object StorageService
         )
       }
 
-  def insertManyQuery(n: Int): Query[List[StorageNew], InsertedRowWithId] =
+  def insertManyQuery(n: Int): Query[List[StoragePut], InsertedRowWithId] =
     sql"""
       INSERT INTO storages (slug, label, description)
       VALUES ${storageNewEnc.values.list(n)}
@@ -147,29 +143,20 @@ object StorageService
         )
       }
 
-  private val storageUpdatedEnc: Encoder[StorageUpdated] =
-    (
-      int4
-        *: varchar(64).opt
-        *: text.opt
-        *: text.opt
-    ).contramap[StorageUpdated] { s =>
-      (
-        s.id,
-        s.slug,
-        s.label,
-        s.description
-      )
-    }
-  def updateManyCmd(n: Int): Command[List[StorageUpdated]] =
+  val updateOneCmd: Command[(Int, StoragePut)] =
     sql"""
-      UPDATE storages AS s
+      UPDATE storages
       SET
-        s.slug = u.slug,
-        s.label = u.label,
-        s.description = u.description
-      FROM ( VALUES
-        ${storageUpdatedEnc.values.list(n)}
-      ) AS u(id, slug, label, description)
-       WHERE s.id = u.id
+        slug = ${varchar(64).opt},
+        label = ${text.opt},
+        description = ${text.opt}
+       WHERE id = $int4
     """".command
+      .contramap[(Int, StoragePut)] { (id, s) =>
+        (
+          s.slug,
+          s.label,
+          s.description,
+          id
+        )
+      }
