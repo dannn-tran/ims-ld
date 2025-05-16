@@ -386,7 +386,7 @@ object ItemAddBulkView:
       text <-- lockAndItemSignal.withCurrentValueOf(storagesS).map {
         case (true, item, storages) =>
           item.storageId match {
-            case Right(Some(id)) =>
+            case Some(id) =>
               storages.find(_.id == id).flatMap(_.label).getOrElse("")
             case _ => ""
           }
@@ -396,23 +396,26 @@ object ItemAddBulkView:
         _ => None,
         _ =>
           select(
-            option(value := "", "Choose storage location..."),
+            placeholder := "Choose a storage location",
+            option(value := "", "None"),
             children <-- storagesS.map { lst =>
               lst.map { s => option(value := s.id.toString(), s.label) }
             },
-            value <-- signal.map(_.storageId match {
-              case Right(Some(id)) => id.toString()
-              case _               => ""
-            }),
-            onInput.mapToValue.map[Either[String, Option[Int]]] { x =>
+            value <-- signal.map(_.storageId.fold("")(_.toString())),
+            onInput.mapToValue.map[Either[Unit, Option[Int]]] { x =>
               if (x.isEmpty()) Right(None)
               else
                 x.toIntOption match
-                  case None        => Left("Invalid storage_id: " + x)
+                  case None        => Left(())
                   case Some(value) => Right(value.some)
-            } --> itemsV.updater[Either[String, Option[Int]]] {
-              (lst, storageId) =>
-                lst.updated(idx, lst(idx).copy(storageId = storageId))
+            } --> {
+              case Right(storageId) =>
+                itemsV
+                  .updater[Option[Int]] { (lst, storageId) =>
+                    lst.updated(idx, lst(idx).copy(storageId = storageId))
+                  }
+                  .onNext(storageId)
+              case _ => ()
             }
           ).some
       )

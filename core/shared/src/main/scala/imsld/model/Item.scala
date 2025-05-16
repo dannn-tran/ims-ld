@@ -9,7 +9,7 @@ final case class Item(
     acquirePrice: Option[MonetaryAmount],
     acquireSource: Option[String],
     storage: Option[StorageSlim],
-    details: Option[String],
+    note: Option[String],
     linkedEntities: List[(ItemEntityRelType, EntityPartial)],
     tags: List[Tag]
 ) extends WithId
@@ -40,5 +40,5 @@ final case class ItemPut(
     acquirePrice: Option[MonetaryAmount],
     acquireSource: Option[String],
     storageId: Option[Int],
-    details: Option[String]
+    note: Option[String]
 )

@@ -21,7 +21,7 @@ CREATE TABLE items (
   acquire_price monetary_amount,
   acquire_source TEXT,
   storage_id INT REFERENCES storages(id),
-  details TEXT
+  note TEXT
 );
 
 CREATE UNIQUE INDEX item_by_slug ON items(slug);

@@ -10,8 +10,6 @@ import imsld.model.{
   PagingRequest,
   PagingResponse
 }
-import skunk.Command
-import skunk.data.Completion
 
 abstract class ServiceBase[F[_]: Sync, T, TPartial, TSlim, TPut](
     pgSessionPool: Resource[F, Session[F]]
@@ -70,11 +68,11 @@ abstract class ServiceBase[F[_]: Sync, T, TPartial, TSlim, TPut](
       yield obj
     }
 
-  def updateOne(id: Int, item: TPut): F[Completion] =
+  def updateOne(id: Int, item: TPut): F[T] =
     pgSessionPool.use { session =>
       for
-        ps <- session.prepare(companion.updateOneCmd)
-        c <- ps.execute((id, item))
+        ps <- session.prepare(companion.updateOneQuery)
+        c <- ps.unique((id, item))
       yield c
     }
 
@@ -84,4 +82,4 @@ trait PgStatementProvider[T, TPartial, TSlim, TPut]:
   def getAllSlimQuery: Query[PagingRequest, TSlim]
   def getOneByIdQuery: Query[Int, T]
   def countQuery: Query[skunk.Void, Int]
-  def updateOneCmd: Command[(Int, TPut)]
+  def updateOneQuery: Query[(Int, TPut), T]

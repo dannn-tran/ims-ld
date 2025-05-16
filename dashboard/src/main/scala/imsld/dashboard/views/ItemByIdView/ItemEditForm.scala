@@ -9,222 +9,269 @@ import scala.util.Try
 import imsld.dashboard.utils.BigDecimalFormatter
 import imsld.dashboard.utils.FetchStorages
 import imsld.model.Item
-import imsld.model.ItemPut
 
 object ItemEditForm:
   def apply(
-      signal: Signal[ItemDtoFlat],
+      signal: Signal[(Int, ItemDtoFlat)],
       editedItemV: Var[Option[(Int, ItemDtoFlat)]],
-      fetchedItemV: Var[Option[Item]],
+      fetchedItemS: Signal[Option[Item]],
       submitBus: EventBus[Unit],
-      editedItemValidatedV: Var[Either[List[String], Option[(Int, ItemPut)]]]
+      submitDisabledS: Signal[Boolean],
+      inputDisabledS: Signal[Boolean]
   ) =
-    val editSlugDiv =
+    val idTr =
+      tr(
+        th("ID"),
+        td(text <-- signal.map { (id, _) => id.toString() })
+      )
+    val slugTr =
       val inputId = "slug-input"
-      div(
-        label(forId := inputId, "Slug"),
-        input(
-          idAttr := inputId,
-          controlled(
-            value <-- signal.map(_.slug.getOrElse("")),
-            onInput.mapToValue --> editedItemV.updater[String] { (opt, slug) =>
-              opt.map { (id, item) =>
-                (id, item.copy(slug = slug.some))
+      tr(
+        th(label(forId := inputId, "Slug")),
+        td(
+          input(
+            idAttr := inputId,
+            controlled(
+              value <-- signal.map { (_, item) => item.slug.getOrElse("") },
+              onInput.mapToValue --> editedItemV.updater[String] {
+                (opt, slug) =>
+                  opt.map { (id, item) =>
+                    (id, item.copy(slug = slug.some))
+                  }
               }
-            }
+            ),
+            disabled <-- inputDisabledS
           )
         )
       )
-    val editAcquireDateDiv =
+    val acquireDateTd =
       val inputId = "acquireDate-input"
-      div(
-        label(forId := inputId, "Acquire date"),
-        input(
-          idAttr := inputId,
-          controlled(
-            value <-- signal.map(_.acquireDate.getOrElse("")),
-            onInput.mapToValue --> editedItemV.updater[String] {
-              (opt, acquireDate) =>
-                opt.map { (id, item) =>
-                  (id, item.copy(acquireDate = acquireDate.some))
-                }
-            }
+      tr(
+        th(label(forId := inputId, "Acquire date")),
+        td(
+          input(
+            idAttr := inputId,
+            controlled(
+              value <-- signal.map { (_, item) =>
+                item.acquireDate.getOrElse("")
+              },
+              onInput.mapToValue --> editedItemV.updater[String] {
+                (opt, acquireDate) =>
+                  opt.map { (id, item) =>
+                    (id, item.copy(acquireDate = acquireDate.some))
+                  }
+              }
+            ),
+            disabled <-- inputDisabledS
           )
         )
       )
-    val editAcquirePriceDiv =
+    val acquirePriceTr =
       val proxyV: Var[Either[String, BigDecimal]] = Var(
         Left("")
       ) // left is from HTML input, right is from signal
-      div(
-        input(
-          cls := "acquirePriceCurrency-input",
-          placeholder := "ccy",
-          controlled(
-            value <-- signal.map(_.acquirePriceCurrency.getOrElse("")),
-            onInput.mapToValue.map(Option.apply) --> editedItemV
-              .updater[Option[String]] { (item, ccy) =>
-                item.map { (id, item) =>
-                  (id, item.copy(acquirePriceCurrency = ccy))
-                }
-              }
-          ),
-          listId := "defaultCurrencies",
-          size := 8
-        ),
-        dataList(
-          idAttr := "defaultCurrencies",
-          CCY_OPTIONS.map { ccy =>
-            option(value := ccy)
-          }
-        ),
-        input(
-          placeholder := "value",
-          controlled(
-            value <-- proxyV.signal.map(
-              _.fold(identity, BigDecimalFormatter.format)
-            ),
-            onInput.mapToValue --> proxyV.writer
-              .contramap[String](Left.apply)
-          ),
-          signal.map(_.acquirePriceValue) --> {
-            case Right(Some(bd)) =>
-              proxyV.writer.onNext(bd.asRight)
-            case _ => ()
-          },
-          proxyV.signal --> {
-            case Left(str) =>
-              val v =
-                if (str.isBlank()) Right(None)
-                else
-                  Try(BigDecimal(str.filter(_ != ','))).fold(
-                    _ => Left(s"Invalid decimal $str"),
-                    bd => Right(bd.some)
-                  )
-              editedItemV
-                .updater[Either[String, Option[BigDecimal]]] { (item, v) =>
+      tr(
+        th("Acquire price"),
+        td(
+          input(
+            cls := "acquirePriceCurrency-input",
+            placeholder := "ccy",
+            controlled(
+              value <-- signal.map { (_, item) =>
+                item.acquirePriceCurrency.getOrElse("")
+              },
+              onInput.mapToValue.map(Option.apply) --> editedItemV
+                .updater[Option[String]] { (item, ccy) =>
                   item.map { (id, item) =>
-                    (id, item.copy(acquirePriceValue = v))
+                    (id, item.copy(acquirePriceCurrency = ccy))
                   }
                 }
-                .onNext(v)
-            case _ => ()
-          },
-          size := 16,
-          cls("error") <-- signal.map(_.acquirePriceValue.isLeft)
+            ),
+            listId := "defaultCurrencies",
+            size := 8,
+            disabled <-- inputDisabledS
+          ),
+          dataList(
+            idAttr := "defaultCurrencies",
+            CCY_OPTIONS.map { ccy =>
+              option(value := ccy)
+            }
+          ),
+          input(
+            placeholder := "value",
+            controlled(
+              value <-- proxyV.signal.map(
+                _.fold(identity, BigDecimalFormatter.format)
+              ),
+              onInput.mapToValue --> proxyV.writer
+                .contramap[String](Left.apply)
+            ),
+            signal.map { (_, item) => item.acquirePriceValue } --> {
+              case Right(Some(bd)) =>
+                proxyV.writer.onNext(bd.asRight)
+              case _ => ()
+            },
+            proxyV.signal --> {
+              case Left(str) =>
+                val v =
+                  if (str.isBlank()) Right(None)
+                  else
+                    Try(BigDecimal(str.filter(_ != ','))).fold(
+                      _ => Left(s"Invalid decimal $str"),
+                      bd => Right(bd.some)
+                    )
+                editedItemV
+                  .updater[Either[String, Option[BigDecimal]]] { (item, v) =>
+                    item.map { (id, item) =>
+                      (id, item.copy(acquirePriceValue = v))
+                    }
+                  }
+                  .onNext(v)
+              case _ => ()
+            },
+            size := 16,
+            cls("error") <-- signal.map { (_, item) =>
+              item.acquirePriceValue.isLeft
+            },
+            disabled <-- inputDisabledS
+          )
         )
       )
-    val editAcquireSourceDiv =
+    val acquireSourceTr =
       val textAreaId = "acquireSource-textARea"
-      div(
-        label(forId := textAreaId, "Acquire source"),
-        textArea(
-          idAttr := textAreaId,
-          controlled(
-            value <-- signal.map(_.acquireSource.getOrElse("")),
-            onInput.mapToValue --> editedItemV.updater[String] {
-              (opt, acquireSource) =>
-                opt.map { (id, item) =>
-                  (id, item.copy(acquireSource = acquireSource.some))
-                }
-            }
+      tr(
+        th(label(forId := textAreaId, "Acquire source")),
+        td(
+          textArea(
+            idAttr := textAreaId,
+            controlled(
+              value <-- signal.map { (_, item) =>
+                item.acquireSource.getOrElse("")
+              },
+              onInput.mapToValue --> editedItemV.updater[String] {
+                (opt, acquireSource) =>
+                  opt.map { (id, item) =>
+                    (id, item.copy(acquireSource = acquireSource.some))
+                  }
+              }
+            ),
+            disabled <-- inputDisabledS
           )
         )
       )
-    val editDetailsDiv =
+    val noteTr =
       val textAreaId = "details-textArea"
-      div(
-        label(forId := textAreaId, "Details"),
-        textArea(
-          idAttr := textAreaId,
-          controlled(
-            value <-- signal.map(_.details.getOrElse("")),
-            onInput.mapToValue --> editedItemV.updater[String] {
-              (opt, details) =>
-                opt.map { (id, item) =>
-                  (id, item.copy(details = details.some))
-                }
-            }
+      tr(
+        th(label(forId := textAreaId, "Details")),
+        td(
+          textArea(
+            idAttr := textAreaId,
+            controlled(
+              value <-- signal.map { (_, item) => item.details.getOrElse("") },
+              onInput.mapToValue --> editedItemV.updater[String] {
+                (opt, details) =>
+                  opt.map { (id, item) =>
+                    (id, item.copy(details = details.some))
+                  }
+              }
+            ),
+            disabled <-- inputDisabledS
           )
         )
       )
-    val storageIdDiv =
+    val storageIdTr =
+      val storageIdS = signal.map { (_, item) =>
+        item.storageId
+      }
+      val storageIdUpdater = editedItemV.updater[Option[Int]] {
+        (opt, storageId) =>
+          opt.map { (id, item) =>
+            (id, item.copy(storageId = storageId))
+          }
+      }
       val storagesFetchStream = FetchStorages.stream
-      val storageIdInputBus: EventBus[Either[String, Option[Int]]] =
-        new EventBus
 
       val selectId = "storage-select"
 
-      div(
-        label(forId := selectId, "Storage"),
-        select(
-          idAttr := selectId,
-          option(value := "", "Choose storage location..."),
-          children <-- storagesFetchStream
-            .collect { case Right(resp) =>
-              resp.data
-            }
-            .map { lst =>
-              lst.map { s => option(value := s.id.toString(), s.label) }
-            },
-          value <-- signal.map(_.storageId match {
-            case Right(Some(id)) => id.toString()
-            case _               => ""
-          }),
-          onInput.mapToValue.map[Either[String, Option[Int]]] { x =>
-            if (x.isEmpty()) Right(None)
-            else
-              x.toIntOption match
-                case None        => Left("Invalid storage_id: " + x)
-                case Some(value) => Right(value.some)
-          } --> editedItemV.updater[Either[String, Option[Int]]] {
-            (opt, storageId) =>
-              opt.map { (id, item) =>
-                (id, item.copy(storageId = storageId))
+      tr(
+        th(label(forId := selectId, "Storage")),
+        td(
+          select(
+            idAttr := selectId,
+            placeholder := "Choose a storage location",
+            option(
+              value := "",
+              "None",
+              selected <-- storageIdS.map(_.isEmpty),
+              onClick.mapTo(None) --> storageIdUpdater
+            ),
+            children <-- storagesFetchStream
+              .collect { case Right(resp) =>
+                resp.data
               }
-          }
-        ),
-        child.maybe <-- storagesFetchStream
-          .collect {
-            case Left(err) =>
-              s"Unable to fetch storages from server. Error: $err".some
-            case _ => None
-          }
-          .splitOption { (_, signal) =>
-            p(text <-- signal, cls := "error")
-          },
-        child.maybe <-- storageIdInputBus.events
-          .collect {
-            case Left(err) =>
-              s"Error encountered while updating storage_id: $err".some
-            case _ => None
-          }
-          .splitOption { (_, signal) =>
-            p(text <-- signal, cls := "error")
-          }
+              .map { lst =>
+                lst.map { s =>
+                  option(
+                    value := s.id.toString(),
+                    s.label,
+                    selected <-- storageIdS.map(_.contains(s.id)),
+                    onClick.mapTo(s.id.some) --> storageIdUpdater
+                  )
+                }
+              },
+            disabled <-- inputDisabledS
+          ),
+          child.maybe <-- storagesFetchStream
+            .collect {
+              case Left(err) =>
+                s"Unable to fetch storages from server. Error: $err".some
+              case _ => None
+            }
+            .splitOption { (_, signal) =>
+              p(text <-- signal, cls := "error")
+            }
+        )
       )
 
+    val resetBus: EventBus[Unit] = new EventBus
+
     form(
-      div(
-        button(
-          typ := "button",
-          onClick.mapTo(fetchedItemV.now()) --> editedItemV.writer
-            .contramap[Option[Item]] { opt =>
-              opt.map { item => (item.id, ItemDtoFlat.fromItem(item)) }
-            },
-          "Reset changes"
-        ),
-        button(
-          typ := "submit",
-          onClick.preventDefault.mapToUnit --> submitBus.writer,
-          disabled <-- editedItemValidatedV.signal.map(_.isLeft),
-          "Submit changes"
-        )
+      table(
+        idAttr := "item-edit-table",
+        idTr,
+        slugTr,
+        acquireDateTd,
+        acquirePriceTr,
+        acquireSourceTr,
+        noteTr,
+        storageIdTr
       ),
-      editSlugDiv,
-      editAcquireDateDiv,
-      editAcquirePriceDiv,
-      editAcquireSourceDiv,
-      editDetailsDiv,
-      storageIdDiv
+      div(
+        idAttr := "item-edit-btn-grp",
+        div(
+          cls := "item-edit-btn-row",
+          button(
+            typ := "button",
+            onClick.mapToUnit --> resetBus.writer,
+            "Reset changes"
+          ),
+          resetBus.events.withCurrentValueOf(fetchedItemS).map { opt =>
+            opt.map { item => (item.id, ItemDtoFlat.fromItem(item)) }
+          } --> editedItemV.writer,
+          button(
+            typ := "submit",
+            onClick.preventDefault.mapToUnit --> submitBus.writer,
+            disabled <-- submitDisabledS,
+            "Submit changes"
+          )
+        ),
+        div(
+          cls := "item-edit-btn-row",
+          button(
+            typ := "button",
+            "Back to view",
+            onClick.mapTo(None) --> editedItemV.writer
+          )
+        )
+      )
     )

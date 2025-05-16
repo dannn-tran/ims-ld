@@ -78,7 +78,8 @@ abstract class RouterBase[
           doc =>
             for
               _ <- service.updateOne(id, doc)
-              resp <- Ok()
+              itemOpt <- service.getOneById(id)
+              resp <- itemOpt.fold(NotFound()) { item => Ok(item) }
             yield resp
         )
   }

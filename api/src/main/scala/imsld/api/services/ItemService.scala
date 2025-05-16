@@ -17,7 +17,7 @@ import imsld.model.{
   PagingRequest,
   StorageSlim
 }
-import skunk.Command
+import skunk.Decoder
 
 given PgStatementProvider[Item, ItemPartial, ItemSlim, ItemPut] =
   ItemService
@@ -60,7 +60,7 @@ object ItemService
           obj.acquirePrice,
           obj.acquireSource,
           obj.storageId,
-          obj.details
+          obj.note
         )
       }
 
@@ -82,7 +82,7 @@ object ItemService
     sql"""
       SELECT
         i.id, i.slug, i.label, i.publish_date, i.acquire_date, i.acquire_price,
-        i.acquire_source, s.id, s.slug, s.label, i.details
+        i.acquire_source, s.id, s.slug, s.label, i.note
       FROM items i
       LEFT JOIN storages s
       ON i.storage_id = s.id
@@ -115,7 +115,7 @@ object ItemService
             storageId,
             storageSlug,
             storageLabel,
-            details
+            note
         ) =>
           ItemPartial(
             id,
@@ -126,7 +126,7 @@ object ItemService
             acquirePrice,
             acquireSource,
             storageId.map { id => StorageSlim(id, storageSlug, storageLabel) },
-            details
+            note
           )
       }
       .contramap { p => (p.offset, p.limit) }
@@ -145,63 +145,62 @@ object ItemService
         (p.offset, p.limit)
       }
 
+  private val itemDec: Decoder[Item] = (int4 // i.id
+    *: varchar(64).opt // i.slug
+    *: text.opt // i.label
+    *: varchar(10).opt // i.publish_date
+    *: varchar(10).opt // i.acquire_date
+    *: monetary_amount.opt // i.acquire_price
+    *: text.opt // i.acquire_source
+    *: int4.opt // i.storage_id
+    *: varchar(64).opt // s.slug
+    *: text.opt // s.label
+    *: text.opt // i.note
+  ).map {
+    case (
+          id,
+          slug,
+          label,
+          publishDate,
+          acquireDate,
+          acquirePrice,
+          acquireSource,
+          storageId,
+          storageSlug,
+          storageLabel,
+          note
+        ) =>
+      Item(
+        id,
+        slug,
+        label,
+        publishDate,
+        acquireDate,
+        acquirePrice,
+        acquireSource,
+        storageId.map { id =>
+          StorageSlim(id, storageSlug, storageLabel)
+        },
+        note,
+        List.empty,
+        List.empty
+      )
+  }
   val getOneByIdQuery: Query[Int, Item] =
     sql"""
       SELECT 
         i.id, i.slug, i.label, i.publish_date, i.acquire_date, i.acquire_price, 
-        i.acquire_source, i.storage_id, s.slug, s.label, i.details
+        i.acquire_source, i.storage_id, s.slug, s.label, i.note
       FROM items i
       LEFT JOIN storages s
       ON i.storage_id = s.id
       WHERE i.id = $int4
     """
-      .query(
-        int4 // i.id
-          *: varchar(64).opt // i.slug
-          *: text.opt // i.label
-          *: varchar(10).opt // i.publish_date
-          *: varchar(10).opt // i.acquire_date
-          *: monetary_amount.opt // i.acquire_price
-          *: text.opt // i.acquire_source
-          *: int4.opt // i.storage_id
-          *: varchar(64).opt // s.slug
-          *: text.opt // s.label
-          *: text.opt // i.details
-      )
-      .map {
-        case (
-              id,
-              slug,
-              label,
-              publishDate,
-              acquireDate,
-              acquirePrice,
-              acquireSource,
-              storageId,
-              storageSlug,
-              storageLabel,
-              details
-            ) =>
-          Item(
-            id,
-            slug,
-            label,
-            publishDate,
-            acquireDate,
-            acquirePrice,
-            acquireSource,
-            storageId.map { id =>
-              StorageSlim(id, storageSlug, storageLabel)
-            },
-            details,
-            List.empty,
-            List.empty
-          )
-      }
+      .query(itemDec)
 
-  val updateOneCmd: Command[(Int, ItemPut)] =
+  val updateOneQuery: Query[(Int, ItemPut), Item] =
     sql"""
-      UPDATE items
+      UPDATE items i
       SET
         slug = ${varchar(64).opt},
         label = ${text.opt},
@@ -210,9 +209,16 @@ object ItemService
         acquire_price = ${monetary_amount.opt},
         acquire_source = ${text.opt},
         storage_id = ${int4.opt},
-        details = ${text.opt}
-      WHERE id = $int4
-    """.command
+        note = ${text.opt}
+      FROM (
+        SELECT * FROM storages
+        WHERE id = ${int4.opt}
+      ) s
+      WHERE i.id = $int4
+      RETURNING i.id, i.slug, i.label, i.publish_date, i.acquire_date, i.acquire_price, 
+        i.acquire_source, i.storage_id, s.slug, s.label, i.note
+    """
+      .query(itemDec)
       .contramap[(Int, ItemPut)] { (id, item) =>
         (
           item.slug,
@@ -222,7 +228,8 @@ object ItemService
           item.acquirePrice,
           item.acquireSource,
           item.storageId,
-          item.details,
+          item.note,
+          item.storageId,
           id
         )
       }

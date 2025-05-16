@@ -16,7 +16,7 @@ final case class ItemDtoFlat(
     acquirePriceValue: Either[String, Option[BigDecimal]] = Right(None),
     acquireSource: Option[String] = None,
     details: Option[String] = None,
-    storageId: Either[String, Option[Int]] = Right(None)
+    storageId: Option[Int] = None
 ):
   def validate: ValidatedNec[String, ItemPut] =
     (
@@ -31,9 +31,8 @@ final case class ItemDtoFlat(
                 s"Acquisition price must have currency specified"
               )
             )
-      },
-      storageId.toValidatedNec
-    ) mapN { (_acquirePrice, _storageId) =>
+      }
+    ) map { (_acquirePrice) =>
       val _slug = slug.flatMap(sanitiseText)
       val _label = label.flatMap(sanitiseText)
       val _publishDate = publishDate.flatMap(sanitiseText)
@@ -47,7 +46,7 @@ final case class ItemDtoFlat(
         acquireDate,
         _acquirePrice,
         _acquireSource,
-        _storageId,
+        storageId,
         _details
       )
     }
@@ -60,6 +59,6 @@ object ItemDtoFlat:
       acquireDate = item.acquireDate,
       acquirePriceCurrency = item.acquirePrice.map(_.currency),
       acquirePriceValue = item.acquirePrice.map(_.value).asRight,
-      details = item.details,
-      storageId = item.storage.map(_.id).asRight
+      details = item.note,
+      storageId = item.storage.map(_.id)
     )

@@ -43,3 +43,18 @@ body {
   max-width: 83.33vw;
   padding-bottom: 8px;
 }
+
+#item-display-table th, #item-edit-table th {
+  text-align: left;
+}
+
+#item-edit-btn-grp {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.item-edit-btn-row {
+  display: flex;
+  gap: 4px;
+}
