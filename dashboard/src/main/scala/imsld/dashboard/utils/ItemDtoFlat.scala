@@ -4,8 +4,7 @@ import cats.data.Validated.{Invalid, Valid}
 import cats.data.{NonEmptyChain, Validated, ValidatedNec}
 import cats.syntax.all.*
 
-import imsld.model.{ItemPut, MonetaryAmount}
-import imsld.model.Item
+import imsld.model.{Item, ItemPut, MonetaryAmount}
 
 final case class ItemDtoFlat(
     slug: Option[String] = None,

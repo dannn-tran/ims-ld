@@ -1,9 +1,10 @@
 package imsld.dashboard.views.ItemByIdView
 
 import com.raquo.airstream.core.Signal
-import imsld.model.Item
 import com.raquo.laminar.api.L.*
+
 import imsld.dashboard.utils.ItemDtoFlat
+import imsld.model.Item
 
 object ItemDisplay:
   def apply(

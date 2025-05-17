@@ -5,46 +5,42 @@ import com.raquo.laminar.api.L.*
 import com.raquo.laminar.nodes.ReactiveHtmlElement
 import io.circe.generic.auto.*
 import io.circe.parser.decode
-import org.scalajs.dom.HTMLDivElement
+import org.scalajs.dom.HTMLTableRowElement
 
+import imsld.dashboard.HttpResponse
+import imsld.dashboard.HttpResponse.Ok
 import imsld.dashboard.constants.BACKEND_ENDPOINT
-import imsld.model.{PagedResponse, StoragePartial, StorageSlim}
+import imsld.model.{PagedResponse, StoragePartial}
 
-object StorageViewAllView {
-  private val storagesVar
-      : Var[Option[Either[Throwable, PagedResponse[StorageSlim]]]] = Var(
-    None
+object StorageViewAllView extends BaseViewAllView[StoragePartial]:
+  override protected val columnHeaders: List[String] = List(
+    "id",
+    "slug",
+    "label",
+    "item count",
+    "description"
   )
 
-  def apply() =
-    div(
-      h1("All Storages"),
-      FetchStream
-        .get(s"$BACKEND_ENDPOINT/storages?detail=slim")
-        .recoverToEither
-        .map(
-          _.fold(err => Left(err), decode[PagedResponse[StorageSlim]])
-        ) --> storagesVar.writer
-        .contramap[Either[Throwable, PagedResponse[StorageSlim]]](_.some),
-      child <-- storagesVar.signal.splitMatchOne
-        .handleCase { case Some(Left(err)) => err } { (_, errSignal) =>
-          div(text <-- errSignal.map(_.toString()))
-        }
-        .handleCase[
-          Option[Either[Throwable, PagedResponse[StoragePartial]]],
-          PagedResponse[StoragePartial],
-          ReactiveHtmlElement[HTMLDivElement]
-        ] { case Some(Right(data)) => data } { (_, signal) =>
-          div(
-            children <-- signal.map(_.data.map { s =>
-              div(
-                h2(s.label),
-                s.description.map { d => p(d) },
-                p(s"Item count: ${s.itemCount}")
-              )
-            })
-          )
-        }
-        .toSignal
-    )
-}
+  override protected def renderRow(
+      obj: StoragePartial
+  ): ReactiveHtmlElement[HTMLTableRowElement] = tr(
+    td(obj.id),
+    td(obj.slug),
+    td(obj.label),
+    td(obj.itemCount),
+    td(obj.description)
+  )
+
+  protected def fetchAll(): EventStream[Either[Throwable, ResponseT]] =
+    FetchStream
+      .withDecoder(HttpResponse.handleServerErrorResponse orElse {
+        case resp if resp.status == 200 =>
+          EventStream
+            .fromJsPromise(resp.text())
+            .map[ResponseT](
+              decode[PagedResponse[StoragePartial]] `andThen` Ok.apply
+            )
+        case resp => HttpResponse.mkUnexpectedResponse(resp)
+      })
+      .get(s"$BACKEND_ENDPOINT/storages?detail=partial")
+      .recoverToEither

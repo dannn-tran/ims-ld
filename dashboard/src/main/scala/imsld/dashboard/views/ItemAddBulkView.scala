@@ -1,6 +1,8 @@
 package imsld.dashboard.views
 
-import cats.data.Validated.Valid
+import scala.util.Try
+
+import cats.data.Validated.{Invalid, Valid}
 import cats.data.{Validated, ValidatedNec}
 import cats.syntax.all.*
 import com.raquo.airstream.status.{Pending, Resolved}
@@ -12,8 +14,9 @@ import io.circe.parser.decode
 import io.circe.syntax.*
 import org.scalajs.dom.HTMLDivElement
 
-import imsld.dashboard.constants.BACKEND_ENDPOINT
-import imsld.dashboard.utils.ItemDtoFlat
+import imsld.dashboard.HttpResponse
+import imsld.dashboard.constants.{BACKEND_ENDPOINT, CCY_OPTIONS}
+import imsld.dashboard.utils.{BigDecimalFormatter, FetchStorages, ItemDtoFlat}
 import imsld.model.{
   InsertedRowWithId,
   ItemPut,
@@ -21,12 +24,6 @@ import imsld.model.{
   PagedResponse,
   StorageSlim
 }
-import imsld.dashboard.constants.CCY_OPTIONS
-import imsld.dashboard.utils.BigDecimalFormatter
-import scala.util.Try
-import imsld.dashboard.utils.FetchStorages
-import cats.data.Validated.Invalid
-import imsld.dashboard.HttpResponse
 
 object ItemAddBulkView:
   given Encoder[ItemPut] = Encoder.derived

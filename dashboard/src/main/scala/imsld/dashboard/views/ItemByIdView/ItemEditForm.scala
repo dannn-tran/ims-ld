@@ -1,13 +1,13 @@
 package imsld.dashboard.views.ItemByIdView
 
+import scala.util.Try
+
+import cats.syntax.all.*
 import com.raquo.airstream.core.Signal
 import com.raquo.laminar.api.L.*
-import imsld.dashboard.utils.ItemDtoFlat
-import cats.syntax.all.*
+
 import imsld.dashboard.constants.CCY_OPTIONS
-import scala.util.Try
-import imsld.dashboard.utils.BigDecimalFormatter
-import imsld.dashboard.utils.FetchStorages
+import imsld.dashboard.utils.{BigDecimalFormatter, FetchStorages, ItemDtoFlat}
 import imsld.model.Item
 
 object ItemEditForm:

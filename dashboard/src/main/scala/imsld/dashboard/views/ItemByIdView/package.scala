@@ -1,26 +1,22 @@
 package imsld.dashboard.views
+import cats.data.Validated.{Invalid, Valid}
 import cats.syntax.all.*
 import com.raquo.airstream.core.Signal
-import com.raquo.airstream.status.Resolved
+import com.raquo.airstream.status.{Pending, Resolved}
 import com.raquo.laminar.api.L.*
 import com.raquo.laminar.nodes.ReactiveHtmlElement
+import io.circe.Encoder
 import io.circe.generic.auto.*
 import io.circe.parser.decode
+import io.circe.syntax.*
 import org.scalajs.dom.{HTMLDivElement, HTMLElement}
 
-import cats.data.Validated.{Valid, Invalid}
 import imsld.dashboard.HttpResponse
-import imsld.dashboard.HttpResponse.{ServerError, UnexpectedResponse}
+import imsld.dashboard.HttpResponse.{NotFound, ServerError, UnexpectedResponse}
 import imsld.dashboard.constants.BACKEND_ENDPOINT
 import imsld.dashboard.pages.ItemByIdPage
 import imsld.dashboard.utils.ItemDtoFlat
-import imsld.model.Item
-import imsld.model.StorageSlim
-import imsld.model.ItemPut
-import io.circe.Encoder
-import io.circe.syntax.*
-import com.raquo.airstream.status.Pending
-import imsld.dashboard.HttpResponse.NotFound
+import imsld.model.{Item, ItemPut, StorageSlim}
 
 package object ItemByIdView {
   given Encoder[ItemPut] = Encoder.derived

@@ -8,10 +8,10 @@ import imsld.dashboard.pages.{
   ItemAddBulkPage,
   ItemByIdPage,
   ItemViewAllPage,
-  NotFoundPage
+  NotFoundPage,
+  StorageViewAllPage
 }
 import imsld.dashboard.views.*
-import imsld.dashboard.pages.StorageViewAllPage
 
 object JsApp {
   private val views: Signal[HtmlElement] =

@@ -5,6 +5,13 @@
 @media (min-width: 1280px) { ... }
 */
 
+a {
+  cursor: pointer;
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
 table {
   border-spacing: 4px;
 }
@@ -21,17 +28,9 @@ body {
   gap: 12px;
 }
 
-.navbar-navgroup-items {
+.navbar-grp-items {
   display: flex;
   flex-direction: column;
-}
-
-#navbar a {
-  text-decoration: none;
-}
-
-.ItemAddTable-acquirePriceCell-ccy {
-  margin-right: 4px;
 }
 
 .error {

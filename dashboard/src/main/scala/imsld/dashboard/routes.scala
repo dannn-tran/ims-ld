@@ -12,5 +12,6 @@ val routes = List(
     decode = ItemByIdPage.apply,
     pattern = root / "items" / segment[Int] / endOfSegments
   ),
-  Route.static(ItemAddBulkPage, root / "items" / "add" / endOfSegments)
+  Route.static(ItemAddBulkPage, root / "items" / "add" / endOfSegments),
+  Route.static(StorageViewAllPage, root / "storages" / "view" / endOfSegments)
 )

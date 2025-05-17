@@ -5,19 +5,18 @@ import cats.syntax.all.*
 import skunk.codec.all.*
 import skunk.implicits.*
 import skunk.syntax.*
-import skunk.{Codec, Encoder, Query, Session}
+import skunk.{Codec, Decoder, Encoder, Query, Session}
 
 import imsld.model.{
   InsertedRowWithId,
   Item,
-  ItemPut,
   ItemPartial,
+  ItemPut,
   ItemSlim,
   MonetaryAmount,
   PagingRequest,
   StorageSlim
 }
-import skunk.Decoder
 
 given PgStatementProvider[Item, ItemPartial, ItemSlim, ItemPut] =
   ItemService

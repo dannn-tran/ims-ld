@@ -7,18 +7,17 @@ import skunk.circe.codec.all.jsonb
 import skunk.codec.all.*
 import skunk.implicits.*
 import skunk.syntax.*
-import skunk.{Codec, Encoder, Query, Session}
+import skunk.{Codec, Decoder, Encoder, Query, Session}
 
 import imsld.model.{
   InsertedRowWithId,
   ItemPartial,
   PagingRequest,
   Storage,
-  StoragePut,
   StoragePartial,
+  StoragePut,
   StorageSlim
 }
-import skunk.Decoder
 
 given PgStatementProvider[
   Storage,
