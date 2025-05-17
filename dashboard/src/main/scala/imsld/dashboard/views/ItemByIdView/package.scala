@@ -172,7 +172,6 @@ package object ItemByIdView {
     )
 
   private def fetchItem(id: Int): EventStream[Either[Throwable, ResponseT]] =
-    println("Fetch!!")
     FetchStream
       .withDecoder[ResponseT](HttpResponse.handleServerErrorResponse orElse {
         case resp if resp.status == 400 =>

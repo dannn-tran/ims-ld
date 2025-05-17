@@ -13,6 +13,8 @@ import imsld.dashboard.constants.BACKEND_ENDPOINT
 import imsld.dashboard.pages.ItemByIdPage
 import imsld.dashboard.{HttpResponse, JsRouter}
 import imsld.model.{ItemPartial, PagedResponse}
+import imsld.dashboard.HttpResponse.{ServerError, Ok}
+import org.scalajs.dom.HTMLElement
 
 object ItemViewAllView:
   private type ResponseT =
@@ -31,56 +33,71 @@ object ItemViewAllView:
   )
 
   def apply(): ReactiveHtmlElement[HTMLDivElement] =
-    val fetchItemsS = fetchItems()
-    val fetchItemsSuccessS = fetchItemsS
-      .map {
-        case Right(HttpResponse.Ok(Right(resp))) => resp.some
-        case _                                   => None
-      }
-      .startWith(None)
-    val fetchItemErrS = fetchItemsS
-      .map {
-        case Left(err) => s"Error: $err".some
-        case Right(err: HttpResponse.ServerError) =>
-          s"Server error (${err.statusCode})".some
-        case Right(resp: HttpResponse.UnexpectedResponse) =>
-          s"Unexpected response (${resp.statusCode}): ${resp.body}".some
-        case _ => None
-      }
-      .startWith(None)
+    val fetchAllS = fetchItems().startWith(None)
 
     div(
       h1("All Items"),
-      child.maybe <-- fetchItemErrS.splitOption { (_, signal) =>
-        p(text <-- signal, cls := "error")
-      },
-      child.maybe <-- fetchItemsSuccessS.splitOption { (resp, _) =>
-        val pageCount = ceilDiv(resp.paging.total, resp.paging.limit)
-        val curPage = resp.paging.offset / resp.paging.limit + 1
-        div(
-          div(
-            (1 until (pageCount + 1)).map { i =>
-              button(
-                typ := "button",
-                i,
-                cls("btn-pg"),
-                cls("btn-pg-cur") := i == curPage
-              )
+      child <-- fetchAllS.splitMatchOne
+        .handleValue(None)(p("Fetching items..."))
+        .handleCase { case Left(err) => err } { (_, signal) =>
+          p(text <-- signal.map { err => s"Error: $err" }, cls := "error")
+        }
+        .handleCase { case Right(err: ServerError) => err.statusCode } {
+          (_, signal) =>
+            p(text <-- signal.map { statusCode =>
+              s"Server error ($statusCode)"
+            })
+        }
+        .handleCase { case Right(resp: UnexpectedResponse) => resp } {
+          (_, signal) =>
+            p(
+              text <-- signal.map { resp =>
+                s"Unexpected response (${resp.statusCode}): ${resp.body}"
+              }
+            )
+        }
+        .handleCase { case Right(Ok(Left(err))) => err } { (_, signal) =>
+          p(
+            text <-- signal.map { err =>
+              s"Unable to parse response body. Error: $err"
             }
-          ),
-          table(
-            thead(
-              tr(
-                COLUMN_HEADERS.map { h => th(h) }
-              )
+          )
+        }
+        .handleCase[Either[Throwable, ResponseT] | None.type, PagedResponse[
+          ItemPartial
+        ], ReactiveHtmlElement[HTMLElement]] { case Right(Ok(Right(resp))) =>
+          resp
+        } { (_, signal) =>
+          div(
+            div(
+              children <-- signal.map { resp =>
+                val pageCount = ceilDiv(resp.paging.total, resp.paging.limit)
+                val curPage = resp.paging.offset / resp.paging.limit + 1
+                (1 until (pageCount + 1)).map { i =>
+                  button(
+                    typ := "button",
+                    i,
+                    cls("btn-pg"),
+                    cls("btn-pg-cur") := i == curPage
+                  )
+                }
+              }
             ),
-            tbody(
-              resp.data.map(renderRow)
+            table(
+              thead(
+                tr(
+                  COLUMN_HEADERS.map { h => th(h) }
+                )
+              ),
+              tbody(
+                children <-- signal.map(_.data.map(renderRow))
+              )
             )
           )
-        )
-      }
+        }
+        .toSignal
     )
+
   private def fetchItems(): EventStream[Either[Throwable, ResponseT]] =
     FetchStream
       .withDecoder(HttpResponse.handleServerErrorResponse orElse {
@@ -94,6 +111,7 @@ object ItemViewAllView:
       })
       .get(s"$BACKEND_ENDPOINT/items?detail=partial")
       .recoverToEither
+
   private def renderRow(item: ItemPartial) = tr(
     td(item.id),
     td(item.slug),
@@ -104,7 +122,14 @@ object ItemViewAllView:
     }),
     td(item.details),
     td(item.storage.map(_.label)),
-    td(a("View item", JsRouter.navigateTo(ItemByIdPage(item.id), true)))
+    td(
+      a(
+        "View item",
+        onClick.preventDefault --> { _ =>
+          JsRouter.pushState(ItemByIdPage(item.id))
+        }
+      )
+    )
   )
 
   private def ceilDiv(a: Int, b: Int): Int = a / b + (if (a % b == 0) 0 else 1)

@@ -11,15 +11,17 @@ import imsld.dashboard.pages.{
   NotFoundPage
 }
 import imsld.dashboard.views.*
+import imsld.dashboard.pages.StorageViewAllPage
 
 object JsApp {
   private val views: Signal[HtmlElement] =
     JsRouter.currentPageSignal.splitMatchOne
       .handleValue(HomePage)(HomeView())
+      .handleValue(NotFoundPage)(NotFoundView())
       .handleValue(ItemViewAllPage)(ItemViewAllView())
       .handleType[ItemByIdPage] { (_, signal) => ItemByIdView(signal) }
       .handleValue(ItemAddBulkPage)(ItemAddBulkView())
-      .handleValue(NotFoundPage)(NotFoundView())
+      .handleValue(StorageViewAllPage)(StorageViewAllView())
       .toSignal
 
   def main(args: Array[String]): Unit = {

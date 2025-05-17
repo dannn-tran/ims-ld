@@ -10,15 +10,33 @@ object Navbar:
     navTag(
       idAttr := "navbar",
       div(
-        a("Home", JsRouter.navigateTo(HomePage, true))
+        a(
+          "Home",
+          onClick.preventDefault --> { _ => JsRouter.pushState(HomePage) }
+        )
       ),
       div(
-        cls := "navbar-navgroup",
         div("Items"),
         div(
-          cls := "navbar-navgroup-items",
-          a("> View all", JsRouter.navigateTo(ItemViewAllPage, true)),
-          a("> Create bulk", JsRouter.navigateTo(ItemAddBulkPage, true))
+          cls := "navbar-grp-items",
+          div(
+            span("> "),
+            a(
+              "View all",
+              onClick.preventDefault --> { _ =>
+                JsRouter.pushState(ItemViewAllPage)
+              }
+            )
+          ),
+          div(
+            span("> "),
+            a(
+              "Create bulk",
+              onClick.preventDefault --> { _ =>
+                JsRouter.pushState(ItemAddBulkPage)
+              }
+            )
+          )
         )
       )
     )
